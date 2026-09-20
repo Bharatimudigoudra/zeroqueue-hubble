@@ -147,8 +147,8 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
         handoff = intercom_handoff.send(session_id, message or query, reason,
                                          band, passages, sess["messages"])
         if handoff["confirmed"]:
-            ack = ("I have paused the AI and sent this conversation to our human "
-                   "support inbox. A teammate can review the details and reply here.")
+            ack = ("A human agent has been notified and will reply right here "
+                   "in this chat shortly. The AI is paused while you wait.")
         else:
             ack = ("I have paused the AI and marked this conversation for human "
                    "review. The live support inbox is not connected right now.")
@@ -181,8 +181,8 @@ def request_handoff(session_id: str) -> dict:
     handoff = intercom_handoff.send(session_id, "(handoff button)",
                                      "customer_requested_human", "unknown", [],
                                      sess.get("messages", []))
-    answer = (("I have paused the AI and sent this conversation to our human "
-               "support inbox. A teammate can review it and reply here.")
+    answer = (("A human agent has been notified and will reply right here "
+               "in this chat shortly. The AI is paused while you wait.")
               if handoff["confirmed"] else
               ("I have paused the AI and marked this conversation for human "
                "review. The live support inbox is not connected right now."))
