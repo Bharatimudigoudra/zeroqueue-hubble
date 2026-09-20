@@ -17,9 +17,9 @@ def send(session_id: str, customer_text: str, reason: str, band: str,
         transcript_text = "\n".join(
             f"{item['role'].title()}: {item['text']}" for item in transcript[-12:])
         if not conversation_id:
-            contact_id = intercom.create_contact(f"zeroqueue-{session_id}")
+            contact = intercom.create_contact(f"zeroqueue-{session_id}")
             opening = ("ZeroQueue web handoff\n\n" + transcript_text).strip()
-            conversation_id = intercom.create_conversation(contact_id, opening)
+            conversation_id = intercom.create_conversation(contact, opening)
             handoff_store.link(session_id, conversation_id)
         citations = answer_service.make_citations(passages or [])
         source_text = "\n".join(f"- {c['label']}: {c.get('url') or 'no URL'}"

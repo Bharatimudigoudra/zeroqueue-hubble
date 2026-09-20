@@ -34,10 +34,20 @@ def _post(path: str, body: dict) -> Dict[str, Any]:
     return response.json()
 
 
-def create_contact(external_id: str, name: str = "ZeroQueue web visitor") -> str:
+def _contact_identity(contact: Dict[str, Any]) -> Dict[str, str]:
+    """Keep the Intercom contact id together with its API role."""
+    contact_id = str(contact["id"])
+    role = str(contact.get("role") or "lead")
+    if role not in {"lead", "user"}:
+        raise ValueError(f"Unsupported Intercom contact role: {role}")
+    return {"id": contact_id, "role": role}
+
+
+def create_contact(external_id: str,
+                   name: str = "ZeroQueue web visitor") -> Dict[str, str]:
     body = {"role": "lead", "external_id": external_id, "name": name}
     try:
-        return _post("/contacts", body)["id"]
+        return _contact_identity(_post("/contacts", body))
     except httpx.HTTPStatusError as exc:
         # A repeated session may already exist. Search by its stable external id.
         if exc.response.status_code != 409:
@@ -45,12 +55,17 @@ def create_contact(external_id: str, name: str = "ZeroQueue web visitor") -> str
         result = _post("/contacts/search", {"query": {"field": "external_id",
                                                         "operator": "=",
                                                         "value": external_id}})
-        return result["data"][0]["id"]
+        return _contact_identity(result["data"][0])
 
 
-def create_conversation(contact_id: str, body: str) -> str:
-    result = _post("/conversations", {"from": {"type": "contact", "id": contact_id},
-                                       "body": body, "message_type": "inapp"})
+def create_conversation(contact: Dict[str, str], body: str) -> str:
+    # Intercom's create-conversation endpoint requires the contact's actual
+    # role (lead or user), not the generic Contact model type.
+    result = _post("/conversations", {
+        "from": {"type": contact["role"], "id": contact["id"]},
+        "body": body,
+        "message_type": "inapp",
+    })
     return str(result["conversation_id"])
 
 

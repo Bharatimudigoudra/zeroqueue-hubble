@@ -94,13 +94,21 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
         return {"answer": answer, "status": "answered", "citations": [],
                 "trace": sess["trace"]}
 
-    # Ask for missing details without repeating facts already supplied.
+    # Ask for missing details without repeating facts already supplied. OCR is
+    # part of the customer's current context, so it must inform clarification
+    # before this branch can return early without retrieval.
+    current_context = incoming
+    if attachment_text.strip():
+        current_context = (f"{current_context} Attachment text (OCR): "
+                           f"{attachment_text.strip()}").strip()
     following_up = bool(sess.get("pending_issue"))
-    issue_text = f"{sess.get('pending_issue', '')} {incoming}".strip()
+    issue_text = f"{sess.get('pending_issue', '')} {current_context}".strip()
     brand = sess.get("pending_brand") or clarification.find_brand(
-        incoming if following_up else issue_text, moss_service.brand_names())
-    error_supplied = clarification.has_error(incoming) if following_up else clarification.has_error(issue_text)
-    needs_clarification = clarification.has_issue(issue_text) and (not brand or not error_supplied)
+        current_context if following_up else issue_text, moss_service.brand_names())
+    error_supplied = (clarification.has_error(current_context) if following_up
+                      else clarification.has_error(issue_text))
+    needs_clarification = (clarification.has_issue(issue_text)
+                           and (not brand or not error_supplied))
     if needs_clarification:
         sess["pending_issue"] = issue_text
         sess["pending_brand"] = brand or ""
