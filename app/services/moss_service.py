@@ -54,7 +54,13 @@ def _run(coroutine):
 
 
 def _metadata(chunk: Chunk) -> dict:
-    return {
+    """Return Moss-compatible metadata.
+
+    Moss 1.12.0 requires every metadata value to be a string. Chunk metadata
+    also contains numeric values such as rank and discount_percentage, so
+    normalize the complete mapping at the SDK boundary.
+    """
+    values = {
         "title": chunk.title,
         "section": chunk.section,
         "section_kind": chunk.section_kind,
@@ -64,6 +70,7 @@ def _metadata(chunk: Chunk) -> dict:
         "rank": chunk.rank,
         "discount_percentage": chunk.discount_percentage,
     }
+    return {key: "" if value is None else str(value) for key, value in values.items()}
 
 
 async def _prepare_moss() -> None:

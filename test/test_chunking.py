@@ -73,3 +73,15 @@ def test_long_terms_text_splits_with_paragraph_overlap():
         assert len(p) <= 900            # overlap may exceed max slightly
     for prev, cur in zip(parts, parts[1:]):
         assert prev.split("\n")[-1] in cur      # shared overlap paragraph
+
+
+def test_moss_metadata_values_are_strings():
+    from app.services.moss_service import _metadata
+
+    chunk = brand_to_chunks(SAMPLE)[0]
+    metadata = _metadata(chunk)
+
+    assert metadata
+    assert all(isinstance(value, str) for value in metadata.values())
+    assert metadata["rank"] == str(chunk.rank)
+    assert metadata["discount_percentage"] == str(chunk.discount_percentage)
