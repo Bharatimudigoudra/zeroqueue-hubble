@@ -45,7 +45,7 @@ conda activate GenAI
 ```
 
 ```powershell
-docdocker compose down
+docker compose down
 
 docker compose build --no-cache
 
