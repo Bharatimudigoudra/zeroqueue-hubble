@@ -44,6 +44,11 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
 
 
 def process_event(payload: dict):
+    topic = str(payload.get("topic") or "")
+    # Only reply topics may surface in the browser. Assignment, notes, closes,
+    # and other conversation events can contain admin-authored parts too.
+    if topic not in {"conversation.admin.replied", "conversation.operator.replied"}:
+        return
     item = payload.get("data", {}).get("item", {})
     conversation_id = str(item.get("id") or "")
     session_id = handoff_store.session_for(conversation_id)
@@ -54,9 +59,16 @@ def process_event(payload: dict):
     body = clean_body(message.get("body", ""))
     if not body:
         return
-    author_type = author.get("type", "")
-    if author_type == "admin":
-        handoff_store.save_human_reply(session_id, str(message.get("id") or payload.get("id") or ""), body)
+    author_type = str(author.get("type") or "")
+    is_admin_reply = topic == "conversation.admin.replied" and author_type == "admin"
+    # Intercom workflows, Fin, and Operator emit operator.replied. Depending on
+    # the automation, their author can be represented as bot, admin, or team;
+    # the topic is the stable signal that this is an outbound reply.
+    is_operator_reply = (topic == "conversation.operator.replied"
+                         and author_type in {"bot", "admin", "team"})
+    if is_admin_reply or is_operator_reply:
+        handoff_store.save_human_reply(
+            session_id, str(message.get("id") or payload.get("id") or ""), body)
         return
     if author_type not in ("user", "lead", "contact"):
         return
