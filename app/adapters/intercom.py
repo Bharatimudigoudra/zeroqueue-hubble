@@ -82,7 +82,28 @@ def add_note(conversation_id: str, note: str) -> Dict[str, Any]:
 
 
 def assign(conversation_id: str) -> Dict[str, Any]:
-    return _post(f"/conversations/{conversation_id}/parts",
-                 {"message_type": "assignment", "type": "team",
-                  "admin_id": config.INTERCOM_ADMIN_ID,
-                  "assignee_id": config.INTERCOM_TEAM_ID})
+    path = f"/conversations/{conversation_id}/parts"
+    body = {"message_type": "assignment", "type": "team",
+            "admin_id": config.INTERCOM_ADMIN_ID,
+            "assignee_id": config.INTERCOM_TEAM_ID}
+    try:
+        return _post(path, body)
+    except httpx.HTTPStatusError as exc:
+        # Intercom returns 422 when the requested final assignment already
+        # exists. That is an idempotent success, not a failed handoff.
+        if exc.response.status_code != 422:
+            raise
+        try:
+            errors = exc.response.json().get("errors", [])
+        except (ValueError, AttributeError):
+            raise
+        codes = {str(item.get("code") or "") for item in errors}
+        already_assigned = {
+            "conversation_already_assigned_to_assignee",
+            "conversation_already_assigned_to_team",
+        }
+        if not codes.intersection(already_assigned):
+            raise
+        log.info("Intercom assignment already satisfied for conversation %s",
+                 conversation_id)
+        return {"type": "conversation_part", "status": "already_assigned"}
