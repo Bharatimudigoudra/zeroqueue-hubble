@@ -181,3 +181,65 @@ def test_bad_extra_knowledge_base_fails_loudly(tmp_path):
     (tmp_path / "bad.json").write_text(json.dumps({"documents": []}), encoding="utf-8")
     with pytest.raises(ValueError, match='must contain a "brands" array'):
         _read_all_kb_files(tmp_path)
+
+
+def test_yes_after_handoff_offer_completes_handoff(client, monkeypatch):
+    from app.services import answer_service, intercom_handoff, pipeline
+
+    pipeline.reset_all()
+    monkeypatch.setattr(
+        answer_service, "build_answer",
+        lambda query, passages: (
+            "I do not have a reliable answer. Would you like me to connect "
+            "you with a support agent?\n\nSources: [1] Test",
+            [{"label": "[1] Test", "url": None}],
+        ),
+    )
+    sent = []
+    monkeypatch.setattr(
+        intercom_handoff, "send",
+        lambda *args, **kwargs: sent.append((args, kwargs)) or
+        {"confirmed": True, "conversation_id": "ic-test"},
+    )
+
+    first = client.post("/api/chat", data={
+        "session_id": "handoff-offer-yes",
+        "message": "How do I redeem an Amazon gift card?",
+    }).json()
+    assert first["status"] == "answered"
+    assert "connect you with a support agent" in first["answer"]
+
+    second = client.post("/api/chat", data={
+        "session_id": "handoff-offer-yes", "message": "yes"
+    }).json()
+    assert second["status"] == "handoff"
+    assert second["handoff_confirmed"] is True
+    assert second["trace"]["handoff_reason"] == "customer_requested_human"
+    assert "sent this conversation" in second["answer"]
+    assert len(sent) == 1
+    transcript = sent[0][0][5]
+    assert {"role": "customer", "text": "yes"} in transcript
+
+
+def test_no_after_handoff_offer_keeps_ai_active(client, monkeypatch):
+    from app.services import answer_service, intercom_handoff, pipeline
+
+    pipeline.reset_all()
+    monkeypatch.setattr(
+        answer_service, "build_answer",
+        lambda query, passages: (
+            "Would you like me to connect you with a support agent?", []),
+    )
+    monkeypatch.setattr(
+        intercom_handoff, "send",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no handoff")),
+    )
+    client.post("/api/chat", data={
+        "session_id": "handoff-offer-no",
+        "message": "How do I redeem an Amazon gift card?",
+    })
+    second = client.post("/api/chat", data={
+        "session_id": "handoff-offer-no", "message": "no thanks"
+    }).json()
+    assert second["status"] == "answered"
+    assert "AI will stay active" in second["answer"]

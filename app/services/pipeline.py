@@ -5,6 +5,7 @@ fine for a demo and keeps the project dependency-light). The shape of
 every public response matches the ZeroQueue backend exactly, so the
 existing web page works against this service unchanged.
 """
+import re
 import time
 from typing import Dict, List, Optional
 
@@ -12,6 +13,31 @@ from app.services import answer_service, clarification, confidence, escalation, 
 
 AI_PAUSED_REPLY = ("The AI is paused for this conversation. Human support can "
                    "review it when the live inbox is connected.")
+
+_AFFIRMATIVE = re.compile(
+    r"^(?:yes|yes please|yeah|yep|sure|ok|okay|please|go ahead|do it|haan|han|ha|ji|"
+    r"bilkul|theek hai|thik hai)[.! ]*$", re.IGNORECASE)
+_NEGATIVE = re.compile(
+    r"^(?:no|nope|not now|no thanks|nah|nahi|nahin)[.! ]*$", re.IGNORECASE)
+_HANDOFF_OFFER = re.compile(
+    r"(?:would you like|shall i|should i|can i|may i).{0,60}"
+    r"(?:connect|transfer|hand ?off|escalat).{0,40}"
+    r"(?:human|support|agent|person|team)|"
+    r"(?:connect|transfer) you (?:to|with) (?:a |an |our )?"
+    r"(?:human|support agent|agent|support team)", re.IGNORECASE | re.DOTALL)
+
+
+def _is_affirmative(message: str) -> bool:
+    return bool(_AFFIRMATIVE.fullmatch((message or "").strip()))
+
+
+def _is_negative(message: str) -> bool:
+    return bool(_NEGATIVE.fullmatch((message or "").strip()))
+
+
+def _offers_handoff(answer: str) -> bool:
+    """Recognize a model-written question that asks permission to hand off."""
+    return bool(_HANDOFF_OFFER.search(answer or ""))
 
 # session_id -> {"status": "open" | "handoff", "trace": {...}}
 _SESSIONS: Dict[str, dict] = {}
@@ -24,6 +50,7 @@ def _session(session_id: str) -> dict:
             "trace": {"state": "empty", "source_count": 0, "sources": []},
             "pending_issue": "",
             "pending_brand": "",
+            "pending_handoff_offer": False,
             "messages": [],
         }
     return _SESSIONS[session_id]
@@ -52,10 +79,22 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
         return {"answer": AI_PAUSED_REPLY, "status": "handoff",
                 "citations": [], "trace": sess["trace"]}
 
-    # Ask for missing details without repeating facts already supplied.
+    # A model may offer a handoff after a grounded answer. Treat the next
+    # affirmative as consent for that pending action, not as a new search query.
     incoming = (message or "").strip()
     if incoming:
         sess["messages"].append({"role": "customer", "text": incoming})
+    if sess.get("pending_handoff_offer") and _is_affirmative(incoming):
+        sess["pending_handoff_offer"] = False
+        return request_handoff(session_id)
+    if sess.get("pending_handoff_offer") and _is_negative(incoming):
+        sess["pending_handoff_offer"] = False
+        answer = "No problem. The AI will stay active. What else can I help with?"
+        sess["messages"].append({"role": "assistant", "text": answer})
+        return {"answer": answer, "status": "answered", "citations": [],
+                "trace": sess["trace"]}
+
+    # Ask for missing details without repeating facts already supplied.
     following_up = bool(sess.get("pending_issue"))
     issue_text = f"{sess.get('pending_issue', '')} {incoming}".strip()
     brand = sess.get("pending_brand") or clarification.find_brand(
@@ -116,6 +155,7 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
 
     # 3. Grounded answer with citations.
     answer, citations = answer_service.build_answer(query, passages)
+    sess["pending_handoff_offer"] = _offers_handoff(answer)
     sess["messages"].append({"role": "assistant", "text": answer})
     _record_trace(sess, retrieval["retrieval_ms"], total_start, band,
                   "answered", passages)
