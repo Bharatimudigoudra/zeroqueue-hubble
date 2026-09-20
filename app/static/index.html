@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZeroQueue | Hubble Support</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="logo"><span class="logo-mark">ZQ</span><div><strong>Zero<span>Queue</span></strong><small>Hubble gift-card support</small></div></div>
+      <div id="statusPill" class="status-pill"><i></i><span>Connecting</span></div>
+    </header>
+
+    <section class="workspace">
+      <section class="chat-card">
+        <div class="chat-heading">
+          <div><span class="eyebrow">AI SUPPORT COPILOT</span><h1>How can we help?</h1><p>Ask about gift-card offers, validity, redemption, or restrictions.</p></div>
+          <button id="newChatButton" class="icon-button" type="button" title="Start a new chat" aria-label="Start a new chat">↻</button>
+        </div>
+
+        <div id="messages" class="messages" aria-live="polite">
+          <div id="welcome" class="welcome">
+            <div class="bot-avatar">ZQ</div>
+            <div><strong>Welcome to ZeroQueue</strong><p>Try "How do I redeem an Amazon gift card?" or attach an invoice or photo.</p></div>
+          </div>
+        </div>
+
+        <div id="filePreview" class="file-preview hidden"><span>📎</span><div><strong id="fileName"></strong><small>Ready to send</small></div><button id="removeFile" type="button" aria-label="Remove attachment">×</button></div>
+
+        <div class="composer-wrap">
+          <textarea id="messageInput" rows="1" placeholder="Type your question..." aria-label="Message"></textarea>
+          <div class="composer-actions">
+            <input id="fileInput" type="file" accept="image/*,video/*,.pdf,.txt,.md" hidden>
+            <button id="attachButton" class="attach-button" type="button">＋ <span>Add file</span></button>
+            <button id="sendButton" class="send-button" type="button"><span>Send</span> ➜</button>
+          </div>
+        </div>
+        <button id="humanButton" class="human-button" type="button">Still need help? Talk to a human</button>
+      </section>
+
+      <aside class="trace-card">
+        <div class="trace-title"><div><span class="trace-dot"></span><strong>Moss Trace</strong></div><span id="traceState" class="trace-state">WAITING</span></div>
+        <p id="traceHelp" class="trace-help">Send a question to see retrieval speed, confidence, and the sources used.</p>
+        <div class="metrics">
+          <div><small>RETRIEVAL</small><strong id="retrievalMetric">-</strong></div>
+          <div><small>TOTAL</small><strong id="totalMetric">-</strong></div>
+          <div><small>CONFIDENCE</small><strong id="confidenceMetric">-</strong></div>
+          <div><small>SOURCES</small><strong id="sourceMetric">0</strong></div>
+        </div>
+        <div id="handoffReason" class="handoff-reason hidden"></div>
+        <div id="sourceSection" class="sources hidden"><small>SOURCES USED</small><ul id="sourceList"></ul></div>
+        <div class="pipeline"><span>Question</span><b>→</b><span>Retrieve</span><b>→</b><span>Answer</span></div>
+      </aside>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

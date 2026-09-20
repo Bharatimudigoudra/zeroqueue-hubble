@@ -1,0 +1,7 @@
+__pycache__
+.pytest_cache
+.env
+uploads/*
+!uploads/.gitkeep
+zeroqueue-state.db
+*.pyc

@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/uploads/*
+!backend/uploads/.gitkeep
+Thumbs.db
+.DS_Store
+
+backend/zeroqueue-state.db

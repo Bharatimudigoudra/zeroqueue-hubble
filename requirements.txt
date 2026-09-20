@@ -1,0 +1,17 @@
+# Runtime API framework and ASGI server
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+
+# FastAPI form and file uploads
+python-multipart>=0.0.9,<1.0
+
+# Groq-compatible HTTPS call used by app/services/answer_service.py
+# (the backend calls Groq's OpenAI-compatible REST API through httpx;
+# it does not import the separate groq SDK)
+httpx>=0.27,<1.0
+
+# Real in-process semantic retrieval
+moss>=1.9,<2.0
+
+# Backend test suite
+pytest>=8.0,<9.0

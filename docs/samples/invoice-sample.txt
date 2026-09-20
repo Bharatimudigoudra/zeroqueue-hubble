@@ -1,0 +1,9 @@
+Nivara Botanics - Tax Invoice
+Order: NB-1042
+Date: 12 Sep 2026
+Item: Rosehip Renewal Serum 30ml
+Qty: 1
+Amount: Rs 1,299
+Shipping: Rs 0 (free over Rs 999)
+Status: Delivered 15 Sep 2026
+Payment: UPI
