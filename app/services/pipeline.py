@@ -128,7 +128,7 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
         query = "(customer sent an attachment with no readable text)"
 
     # 1. Retrieve (local index today, real Moss tomorrow - same signature).
-    retrieval = moss_service.search((message or "").strip() or query)
+    retrieval = moss_service.search(query)
     passages = retrieval["passages"]
 
     # 2. Evidence-based confidence + escalation decision (never the LLM's).

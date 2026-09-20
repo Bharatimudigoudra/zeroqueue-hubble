@@ -27,7 +27,12 @@
           </div>
         </div>
 
-        <div id="filePreview" class="file-preview hidden"><span>📎</span><div><strong id="fileName"></strong><small>Ready to send</small></div><button id="removeFile" type="button" aria-label="Remove attachment">×</button></div>
+        <div id="filePreview" class="file-preview hidden">
+          <img id="fileThumbnail" class="file-thumbnail hidden" alt="Selected image preview">
+          <span id="fileIcon">📎</span>
+          <div><strong id="fileName"></strong><small>Ready to send</small></div>
+          <button id="removeFile" type="button" aria-label="Remove attachment">×</button>
+        </div>
 
         <div class="composer-wrap">
           <textarea id="messageInput" rows="1" placeholder="Type your question..." aria-label="Message"></textarea>
@@ -37,7 +42,13 @@
             <button id="sendButton" class="send-button" type="button"><span>Send</span> ➜</button>
           </div>
         </div>
-        <button id="humanButton" class="human-button" type="button">Still need help? Talk to a human</button>
+        <div class="human-launcher">
+          <button id="humanButton" class="human-fab" type="button" aria-label="Talk to human support" title="Talk to human support">
+            <span class="human-fab-icon" aria-hidden="true">HS</span>
+            <span class="human-fab-text">TALK TO<br>HUMAN</span>
+          </button>
+          <button id="humanLabelButton" class="human-fab-label" type="button" aria-label="Ask a human">👋 Ask Human</button>
+        </div>
       </section>
 
       <aside class="trace-card">

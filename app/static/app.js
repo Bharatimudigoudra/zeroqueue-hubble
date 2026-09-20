@@ -4,6 +4,7 @@ const messages = byId("messages");
 const input = byId("messageInput");
 const fileInput = byId("fileInput");
 let selectedFile = null;
+let selectedPreviewUrl = null;
 let busy = false;
 
 function sessionId() {
@@ -15,19 +16,36 @@ function sessionId() {
   return id;
 }
 
-function addMessage(role, text) {
+function addMessage(role, text, imageUrl = null) {
   byId("welcome")?.remove();
   const row = document.createElement("div");
   row.className = `message-row ${role}`;
-  if (role === "bot") {
+  if (role === "bot" || role === "human") {
     const avatar = document.createElement("div");
-    avatar.className = "bot-avatar";
-    avatar.textContent = "ZQ";
+    avatar.className = role === "human" ? "human-avatar" : "bot-avatar";
+    avatar.textContent = role === "human" ? "HS" : "ZQ";
     row.appendChild(avatar);
   }
   const bubble = document.createElement("div");
   bubble.className = "message";
-  bubble.textContent = text;
+  if (role === "human") {
+    const label = document.createElement("strong");
+    label.className = "human-label";
+    label.textContent = "Human support";
+    bubble.appendChild(label);
+    bubble.appendChild(document.createTextNode(text));
+  } else {
+    bubble.textContent = text;
+  }
+  if (imageUrl) {
+    const image = document.createElement("img");
+    image.className = "message-image";
+    image.alt = "Uploaded image";
+    image.src = imageUrl;
+    image.addEventListener("load", () => URL.revokeObjectURL(imageUrl), {once: true});
+    image.addEventListener("error", () => URL.revokeObjectURL(imageUrl), {once: true});
+    bubble.prepend(image);
+  }
   row.appendChild(bubble);
   messages.appendChild(row);
   messages.scrollTop = messages.scrollHeight;
@@ -49,9 +67,21 @@ function setBusy(value) {
 }
 
 function showFile(file) {
+  if (selectedPreviewUrl) URL.revokeObjectURL(selectedPreviewUrl);
+  selectedPreviewUrl = null;
   selectedFile = file;
   byId("filePreview").classList.toggle("hidden", !file);
   byId("fileName").textContent = file?.name || "";
+  const thumbnail = byId("fileThumbnail");
+  const isImage = Boolean(file?.type?.startsWith("image/"));
+  if (isImage) {
+    selectedPreviewUrl = URL.createObjectURL(file);
+    thumbnail.src = selectedPreviewUrl;
+  } else {
+    thumbnail.removeAttribute("src");
+  }
+  thumbnail.classList.toggle("hidden", !isImage);
+  byId("fileIcon").classList.toggle("hidden", isImage || !file);
 }
 
 function updateTrace(trace = {}) {
@@ -79,7 +109,8 @@ async function sendMessage() {
   const text = input.value.trim();
   if (busy || (!text && !selectedFile)) return;
   const file = selectedFile;
-  addMessage("customer", text || `(attached ${file.name})`);
+  const sentImageUrl = file?.type?.startsWith("image/") ? URL.createObjectURL(file) : null;
+  addMessage("customer", text || `(attached ${file.name})`, sentImageUrl);
   input.value = "";
   input.style.height = "auto";
   showFile(null);
@@ -107,16 +138,27 @@ async function sendMessage() {
 async function talkToHuman() {
   if (busy) return;
   setBusy(true);
+  const launchers = [byId("humanButton"), byId("humanLabelButton")];
+  launchers.forEach((button) => button.classList.add("working"));
   const typing = showTyping();
   try {
-    const response = await fetch("/api/handoff", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:sessionId()}) });
+    const response = await fetch("/api/handoff", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: sessionId()}),
+    });
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "Request failed");
     typing.remove();
     addMessage("bot", body.answer);
     updateTrace(body.trace);
-  } catch (error) { typing.remove(); addMessage("system", `Something went wrong: ${error.message}`); }
-  finally { setBusy(false); }
+  } catch (error) {
+    typing.remove();
+    addMessage("system", `Something went wrong: ${error.message}`);
+  } finally {
+    launchers.forEach((button) => button.classList.remove("working"));
+    setBusy(false);
+  }
 }
 
 async function checkHealth() {
@@ -139,13 +181,14 @@ async function checkHumanReplies() {
     const body = await response.json();
     (body.replies || []).forEach((reply) => {
       lastHumanReplyId = Math.max(lastHumanReplyId, reply.id);
-      addMessage("bot", `Human support: ${reply.body}`);
+      addMessage("human", reply.body);
     });
   } catch (_) { /* A quiet poll failure should not interrupt chat. */ }
 }
 
 byId("sendButton").addEventListener("click", sendMessage);
 byId("humanButton").addEventListener("click", talkToHuman);
+byId("humanLabelButton").addEventListener("click", talkToHuman);
 byId("attachButton").addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", () => showFile(fileInput.files[0] || null));
 byId("removeFile").addEventListener("click", () => { fileInput.value = ""; showFile(null); });

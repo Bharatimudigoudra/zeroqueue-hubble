@@ -22,7 +22,15 @@ def _headers() -> Dict[str, str]:
 def _post(path: str, body: dict) -> Dict[str, Any]:
     response = httpx.post(f"{config.INTERCOM_API_BASE}{path}", headers=_headers(),
                           json=body, timeout=30)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError:
+        # Log the failing operation, not request headers or payloads. This gives
+        # Render enough detail to diagnose permissions/IDs without exposing tokens.
+        response_excerpt = " ".join(response.text.split())[:500]
+        log.error("Intercom POST %s failed with HTTP %s: %s",
+                  path, response.status_code, response_excerpt or "(empty response)")
+        raise
     return response.json()
 
 
@@ -59,5 +67,7 @@ def add_note(conversation_id: str, note: str) -> Dict[str, Any]:
 
 
 def assign(conversation_id: str) -> Dict[str, Any]:
-    return _post(f"/conversations/{conversation_id}",
-                 {"assignee_id": config.INTERCOM_TEAM_ID, "type": "team"})
+    return _post(f"/conversations/{conversation_id}/parts",
+                 {"message_type": "assignment", "type": "team",
+                  "admin_id": config.INTERCOM_ADMIN_ID,
+                  "assignee_id": config.INTERCOM_TEAM_ID})
