@@ -85,6 +85,11 @@ def test_python_frontend_is_served(client):
     assert response.status_code == 200
     assert "ZeroQueue" in response.text
     assert "/static/app.js" in response.text
+    assert "Still need help? Talk to a human" not in response.text
+    assert 'id="humanButton"' in response.text
+    assert "Talk to human support" in response.text
+    assert 'id="humanLabelButton"' in response.text
+    assert "👋 Ask Human" in response.text
 
 
 def test_frontend_assets_are_served(client):
@@ -92,6 +97,9 @@ def test_frontend_assets_are_served(client):
     script = client.get("/static/app.js")
     assert script.status_code == 200
     assert 'fetch("/api/chat"' in script.text
+    assert "URL.createObjectURL(file)" in script.text
+    assert 'addMessage("customer", text || `(attached ${file.name})`, sentImageUrl)' in script.text
+    assert 'id="fileThumbnail"' in client.get("/").text
 
 
 def test_health_reports_retrieval_provider(client):
@@ -215,7 +223,8 @@ def test_yes_after_handoff_offer_completes_handoff(client, monkeypatch):
     assert second["status"] == "handoff"
     assert second["handoff_confirmed"] is True
     assert second["trace"]["handoff_reason"] == "customer_requested_human"
-    assert "sent this conversation" in second["answer"]
+    assert "A human agent has been notified" in second["answer"]
+    assert "reply right here in this chat shortly" in second["answer"]
     assert len(sent) == 1
     transcript = sent[0][0][5]
     assert {"role": "customer", "text": "yes"} in transcript
@@ -243,3 +252,100 @@ def test_no_after_handoff_offer_keeps_ai_active(client, monkeypatch):
     }).json()
     assert second["status"] == "answered"
     assert "AI will stay active" in second["answer"]
+
+
+def test_ocr_attachment_text_drives_retrieval_to_amazon(client, monkeypatch):
+    """A generic typed question must not hide the brand/error found by OCR."""
+    from app.services import attachment_service
+
+    monkeypatch.setattr(
+        attachment_service,
+        "extract",
+        lambda filename, data: (
+            "Amazon shopping voucher. VOUCHER CODE IS INVALID. "
+            "Redeem at amazon.in/addgiftcard with claim code.",
+            f"Read 12 words from {filename} via OCR.",
+        ),
+    )
+    response = client.post(
+        "/api/chat",
+        data={
+            "session_id": "ocr-amazon-retrieval",
+            "message": "What should I check, and how do I redeem it correctly?",
+        },
+        files={"file": ("amazon-voucher.png", b"fake-image", "image/png")},
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert body["attachment_note"].endswith("via OCR.")
+    assert body["citations"]
+    assert all("Amazon" in item["label"] for item in body["citations"])
+
+
+
+def test_pending_clarification_uses_amazon_error_from_ocr(client, monkeypatch):
+    """OCR can complete a pending brand/error clarification before retrieval."""
+    from app.services import attachment_service, pipeline
+
+    pipeline.reset_all()
+    first = client.post("/api/chat", data={
+        "session_id": "ocr-completes-clarification",
+        "message": "My voucher is not working",
+    }).json()
+    assert first["status"] == "clarifying"
+
+    monkeypatch.setattr(
+        attachment_service,
+        "extract",
+        lambda filename, data: (
+            "Amazon shopping voucher. VOUCHER CODE IS INVALID. "
+            "Redeem at amazon.in/addgiftcard with claim code.",
+            f"Read 12 words from {filename} via OCR.",
+        ),
+    )
+    response = client.post(
+        "/api/chat",
+        data={
+            "session_id": "ocr-completes-clarification",
+            "message": "What should I check, and how do I redeem it correctly?",
+        },
+        files={"file": ("amazon-invalid.png", b"fake-image", "image/png")},
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["status"] == "answered"
+    assert body["trace"]["state"] == "answered"
+    assert body["trace"]["retrieval_ms"] is not None
+    assert body["citations"]
+    assert body["citations"][0]["label"].startswith("[1] Amazon")
+    assert any("Amazon" in item["label"] for item in body["citations"])
+
+
+
+def test_handoff_success_auto_ack_and_failure_stays_honest(client, monkeypatch):
+    from app.services import intercom_handoff, pipeline
+
+    pipeline.reset_all()
+    monkeypatch.setattr(
+        intercom_handoff, "send",
+        lambda *args, **kwargs: {"confirmed": True, "conversation_id": "ic-auto-ack"},
+    )
+    success = client.post("/api/handoff", json={
+        "session_id": "handoff-auto-ack-success"}).json()
+    assert success["handoff_confirmed"] is True
+    assert success["status"] == "handoff"
+    assert "A human agent has been notified" in success["answer"]
+    assert "reply right here in this chat shortly" in success["answer"]
+    assert "AI is paused" in success["answer"]
+
+    pipeline.reset_all()
+    monkeypatch.setattr(
+        intercom_handoff, "send",
+        lambda *args, **kwargs: {"confirmed": False, "reason": "HTTPStatusError"},
+    )
+    failed = client.post("/api/handoff", json={
+        "session_id": "handoff-auto-ack-failure"}).json()
+    assert failed["handoff_confirmed"] is False
+    assert "not connected right now" in failed["answer"]
+    assert "has been notified" not in failed["answer"]
