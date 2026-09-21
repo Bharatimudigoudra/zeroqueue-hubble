@@ -108,7 +108,7 @@ def health():
         "ocr_provider": "tesseract",
         "kb_brands": KB_STATS["brands"],
         "kb_chunks": KB_STATS["chunks"],
-        "llm_configured": bool(config.GROQ_API_KEY),
+        "llm_configured": bool(config.LLM_API_KEY),
         "retrieval": moss_service.status(),
         "intercom_configured": all((config.INTERCOM_ACCESS_TOKEN, config.INTERCOM_WEBHOOK_SECRET, config.INTERCOM_ADMIN_ID, config.INTERCOM_TEAM_ID)),
     }

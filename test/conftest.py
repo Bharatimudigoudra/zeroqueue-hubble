@@ -7,10 +7,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repo root
 
 # Isolate the test suite from a developer's private .env. These values are set
-# before app.config is imported, so tests never call live Groq, Moss, or
+# before app.config is imported, so tests never call live LLM, Moss, or
 # Intercom services and cannot depend on local credentials.
 os.environ.update({
     "MOCK_MODE": "true",
+    "LLM_API_KEY": "",
     "GROQ_API_KEY": "",
     "MOSS_PROJECT_ID": "",
     "MOSS_PROJECT_KEY": "",

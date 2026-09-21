@@ -15,7 +15,7 @@ Browser: http://localhost:8000
                  |
                  +--> Hubble JSON: 100 brands -> 875 chunks
                  +--> Moss-ready retrieval -> confidence -> cited answer or handoff
-                 +--> Groq wording when MOCK_MODE=false
+                 +--> LLM wording when MOCK_MODE=false
 ```
 
 The browser JavaScript sends the question to `/api/chat` on the same address. There is no Node.js, Next.js, npm, frontend build step, or second container.
@@ -73,7 +73,7 @@ Then open `http://localhost:8000`.
 Copy `.env.example` to `.env` if your old `.env` is not already available locally. Keep `.env` private and never push it to GitHub.
 
 - `MOCK_MODE=true` - local grounded answers, no external API call.
-- `MOCK_MODE=false` - Groq writes the final wording using `GROQ_API_KEY`.
+- `MOCK_MODE=false` - the LLM writes the final wording using `LLM_API_KEY` (old `GROQ_API_KEY` still works).
 - `MOSS_API_KEY` and `MOSS_INDEX_NAME` - reserved for the real Moss integration seam.
 
 ## Test

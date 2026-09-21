@@ -4,7 +4,7 @@ MOCK_MODE (default): no LLM call. The answer is quoted from the top
 chunk with explicit citations. This keeps the system fully offline and
 makes the citation contract visible.
 
-REAL BUILD: set MOCK_MODE=false and GROQ_API_KEY in .env; then the
+REAL BUILD: set MOCK_MODE=false and LLM_API_KEY in .env; then the
 chunks, source ids and rules go to the Groq model and it must answer
 ONLY from them. If the Groq call fails (outage, retired model, bad
 key), we fall back to the quote - a live demo must never die on a 404.
@@ -68,9 +68,9 @@ def grounded_answer(query: str, passages: List[Chunk]) -> str:
               .replace("{question}", query)
               .replace("{passages}", blocks))
     resp = httpx.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
-        json={"model": config.GROQ_MODEL,
+        f"{config.LLM_BASE_URL}/chat/completions",
+        headers={"Authorization": f"Bearer {config.LLM_API_KEY}"},
+        json={"model": config.LLM_MODEL,
               "messages": [{"role": "user", "content": prompt}],
               "temperature": 0},
         timeout=30,
@@ -81,12 +81,12 @@ def grounded_answer(query: str, passages: List[Chunk]) -> str:
 
 def build_answer(query: str, passages: List[Chunk]) -> Tuple[str, List[dict]]:
     citations = make_citations(passages)
-    if not config.MOCK_MODE and config.GROQ_API_KEY:
+    if not config.MOCK_MODE and config.LLM_API_KEY:
         try:
             text = grounded_answer(query, passages)
             text = _SOURCES_TAIL.sub("", text).rstrip()
         except Exception:
-            log.exception("Groq answer failed - falling back to chunk quote")
+            log.exception("LLM answer failed - falling back to chunk quote")
             text = quote_chunk(passages)
     else:
         text = quote_chunk(passages)

@@ -29,7 +29,7 @@ _load_dotenv(REPO_ROOT / ".env")
 
 PORT = int(os.environ.get("PORT", "8000"))
 
-# MOCK_MODE=true (default): no external paid API calls. The Groq adapter
+# MOCK_MODE=true (default): no external paid API calls. The LLM adapter
 # is skipped and answers are quoted from the best chunk instead.
 MOCK_MODE = os.environ.get("MOCK_MODE", "true").strip().lower() == "true"
 
@@ -43,9 +43,25 @@ DEMO_RESET_SECRET = os.environ.get("DEMO_RESET_SECRET", "dev-reset-secret")
 # which is fine for the local demo; set it before sharing a deployed URL.
 AGENT_CONSOLE_KEY = os.environ.get("AGENT_CONSOLE_KEY", "")
 
-# --- LLM (Groq free tier; only used when MOCK_MODE=false) ---
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+# --- LLM (answer wording; only used when MOCK_MODE=false) ---
+def _env_first(*names, default=""):
+    """Return the first environment variable that is set and non-empty.
+
+    Lets us rename a setting without breaking old .env files: the new
+    name wins, and the old name is still honoured as a fallback.
+    """
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return default
+
+
+# New names are LLM_*; the old GROQ_* names still work as fallbacks so
+# nothing breaks if they linger in Render or an old .env.
+LLM_API_KEY = _env_first("LLM_API_KEY", "GROQ_API_KEY")
+LLM_MODEL = _env_first("LLM_MODEL", "GROQ_MODEL", default="openai/gpt-oss-20b")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
 
 # --- Attachments / OCR ---
 UPLOAD_DIR = REPO_ROOT / "uploads"
@@ -68,4 +84,3 @@ STATE_DB_PATH = str(REPO_ROOT / os.environ.get("STATE_DB_FILE", "zeroqueue-state
 DATA_DIR = REPO_ROOT / "data"
 # Kept for scripts/tests that intentionally target the original Hubble file.
 KB_FILE = DATA_DIR / "hubble-gift-cards-top100.json"
-
