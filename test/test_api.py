@@ -97,6 +97,9 @@ def test_frontend_assets_are_served(client):
     script = client.get("/static/app.js")
     assert script.status_code == 200
     assert 'fetch("/api/chat"' in script.text
+    # The click listener must not pass its MouseEvent as sendMessage's retry data.
+    assert 'addEventListener("click", () => sendMessage())' in script.text
+    assert 'addEventListener("click", sendMessage)' not in script.text
     assert "URL.createObjectURL(file)" in script.text
     assert 'addMessage("customer", text || `(attached ${file.name})`, sentImageUrl)' in script.text
     assert 'id="fileThumbnail"' in client.get("/").text
@@ -349,3 +352,35 @@ def test_handoff_success_auto_ack_and_failure_stays_honest(client, monkeypatch):
     assert failed["handoff_confirmed"] is False
     assert "not connected right now" in failed["answer"]
     assert "has been notified" not in failed["answer"]
+
+
+def test_message_after_handoff_is_forwarded_to_same_human_queue(client, monkeypatch):
+    from app.services import intercom_handoff, pipeline
+
+    calls = []
+
+    def fake_send(session_id, customer_text, reason, band, passages, transcript):
+        calls.append({
+            "session_id": session_id,
+            "customer_text": customer_text,
+            "reason": reason,
+            "transcript": transcript,
+        })
+        return {"confirmed": True, "conversation_id": "ic-existing"}
+
+    monkeypatch.setattr(intercom_handoff, "send", fake_send)
+    pipeline.request_handoff("human-follow-up")
+    calls.clear()
+
+    body = client.post("/api/chat", data={
+        "session_id": "human-follow-up",
+        "message": "What should I check?",
+    }).json()
+
+    assert body["status"] == "handoff"
+    assert body["handoff_confirmed"] is True
+    assert calls[0]["session_id"] == "human-follow-up"
+    assert calls[0]["customer_text"] == "What should I check?"
+    assert calls[0]["transcript"][-1] == {
+        "role": "customer", "text": "What should I check?"
+    }

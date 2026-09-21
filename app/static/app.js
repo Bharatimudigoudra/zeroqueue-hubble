@@ -258,7 +258,9 @@ async function checkHumanReplies() {
   } catch (_) { /* A quiet poll failure should not interrupt chat. */ }
 }
 
-byId("sendButton").addEventListener("click", sendMessage);
+// A click listener receives a MouseEvent. Do not pass that event into sendMessage,
+// because sendMessage only accepts our own optional retry object.
+byId("sendButton").addEventListener("click", () => sendMessage());
 byId("humanButton").addEventListener("click", talkToHuman);
 byId("humanLabelButton").addEventListener("click", talkToHuman);
 byId("attachButton").addEventListener("click", () => fileInput.click());

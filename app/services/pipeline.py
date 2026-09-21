@@ -74,14 +74,31 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
     total_start = time.perf_counter()
     sess = _session(session_id)
 
-    # If a human already owns this conversation, the AI stays silent.
+    incoming = (message or "").strip()
+
+    # If a human already owns this conversation, forward the new message to
+    # that same support conversation instead of asking the AI to answer it.
     if sess["status"] == "handoff":
+        forwarded_text = incoming
+        if attachment_text.strip():
+            forwarded_text = (f"{forwarded_text}\n\nAttachment text (OCR):\n"
+                              f"{attachment_text.strip()}").strip()
+        if forwarded_text:
+            sess["messages"].append({"role": "customer", "text": forwarded_text})
+            handoff = intercom_handoff.send(
+                session_id, forwarded_text,
+                sess["trace"].get("handoff_reason") or "human_follow_up",
+                sess["trace"].get("confidence_band") or "unknown", [],
+                sess["messages"],
+            )
+        else:
+            handoff = {"confirmed": False}
         return {"answer": AI_PAUSED_REPLY, "status": "handoff",
-                "citations": [], "trace": sess["trace"]}
+                "citations": [], "trace": sess["trace"],
+                "handoff_confirmed": handoff["confirmed"]}
 
     # A model may offer a handoff after a grounded answer. Treat the next
     # affirmative as consent for that pending action, not as a new search query.
-    incoming = (message or "").strip()
     if incoming:
         sess["messages"].append({"role": "customer", "text": incoming})
     if sess.get("pending_handoff_offer") and _is_affirmative(incoming):
