@@ -18,6 +18,22 @@ def _signed(client, payload, secret):
                        headers={"X-Hub-Signature": signature})
 
 
+def test_clean_body_preserves_paragraphs_and_line_breaks():
+    from app.api_intercom import clean_body
+
+    body = "<p><strong>Hello</strong><br>Second line</p><p>Next paragraph</p>"
+
+    assert clean_body(body) == "Hello\nSecond line\nNext paragraph"
+
+
+def test_clean_body_turns_html_list_items_into_plain_bullets():
+    from app.api_intercom import clean_body
+
+    body = "<p>Please try:</p><ul><li>Open settings</li><li>Try again</li></ul>"
+
+    assert clean_body(body) == "Please try:\n- Open settings\n- Try again"
+
+
 def test_webhook_requires_configured_secret(client, monkeypatch):
     from app import config
     monkeypatch.setattr(config, "INTERCOM_WEBHOOK_SECRET", "")

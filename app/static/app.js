@@ -26,10 +26,33 @@ function escapeHtml(text) {
 }
 
 function renderMarkdown(text) {
-  return escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/^\s*[-*]\s+(.+)$/gm, "• $1")
-    .replace(/\n/g, "<br>");
+  const safeText = escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  const lines = safeText.split("\n");
+  let result = "";
+  let listIsOpen = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const bullet = lines[index].match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!listIsOpen) {
+        result += "<ul>";
+        listIsOpen = true;
+      }
+      result += `<li>${bullet[1]}</li>`;
+      continue;
+    }
+
+    if (listIsOpen) {
+      result += "</ul>";
+      listIsOpen = false;
+    }
+    result += lines[index];
+    if (index < lines.length - 1) result += "<br>";
+  }
+
+  if (listIsOpen) result += "</ul>";
+  return result;
 }
 
 function addMessage(role, text, imageUrl = null) {

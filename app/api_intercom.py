@@ -22,7 +22,21 @@ def verify_signature(raw: bytes, header: str) -> bool:
 
 
 def clean_body(value: str) -> str:
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
+    """Turn Intercom's safe HTML into readable plain text."""
+    text = value or ""
+    text = re.sub(r"<\s*br\s*/?\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*li\b[^>]*>", "\n- ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/\s*li\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/\s*(?:p|div)\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*(?:p|div)\b[^>]*>", "", text, flags=re.IGNORECASE)
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+
+    lines = []
+    for line in text.splitlines():
+        line = re.sub(r"[ \t]+", " ", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines).strip()
 
 
 @router.post("/api/webhooks/intercom")
