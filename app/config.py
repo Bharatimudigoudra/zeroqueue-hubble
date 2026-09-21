@@ -39,6 +39,10 @@ CORS_ORIGINS = [o.strip() for o in os.environ.get(
 # Protects POST /api/demo/reset so strangers cannot wipe the demo state.
 DEMO_RESET_SECRET = os.environ.get("DEMO_RESET_SECRET", "dev-reset-secret")
 
+# Optional key for the agent console API (/api/agent/*). Empty means open,
+# which is fine for the local demo; set it before sharing a deployed URL.
+AGENT_CONSOLE_KEY = os.environ.get("AGENT_CONSOLE_KEY", "")
+
 # --- LLM (Groq free tier; only used when MOCK_MODE=false) ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")

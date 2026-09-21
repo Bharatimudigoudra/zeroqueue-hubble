@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZeroQueue | Agent Console</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="logo"><span class="logo-mark">ZQ</span><div><strong>Zero<span>Queue</span></strong><small>Agent console</small></div></div>
+      <div class="topbar-actions">
+        <a class="nav-link" href="/">Customer chat</a>
+        <div id="statusPill" class="status-pill"><i></i><span>Connecting</span></div>
+      </div>
+    </header>
+
+    <section class="workspace agent-workspace">
+      <aside class="queue-card">
+        <div class="queue-heading">
+          <div><span class="eyebrow">HUMAN QUEUE</span><h2>Escalated chats</h2></div>
+          <button id="refreshButton" class="icon-button" type="button" title="Refresh queue" aria-label="Refresh queue">↻</button>
+        </div>
+        <div id="queueList" class="queue-list">
+          <p class="queue-empty">No customer is waiting. Escalated chats appear here the moment a customer asks for a human or the AI hands off.</p>
+        </div>
+      </aside>
+
+      <section class="chat-card agent-detail">
+        <div id="detailEmpty" class="detail-empty">
+          <div class="bot-avatar">ZQ</div>
+          <div><strong>Pick a conversation</strong><p>Select an escalated chat on the left to review the AI's suggested answer, edit it, and approve the reply.</p></div>
+        </div>
+
+        <div id="detailBody" class="hidden">
+          <div class="detail-heading">
+            <div>
+              <span class="eyebrow">CONVERSATION</span>
+              <h1 id="detailTitle">-</h1>
+              <p id="detailMeta">-</p>
+            </div>
+          </div>
+
+          <div id="transcript" class="messages agent-transcript"></div>
+
+          <div class="suggestion-card">
+            <div class="suggestion-heading">
+              <span class="eyebrow">AI SUGGESTED ANSWER</span>
+              <span id="suggestionConfidence" class="trace-state">-</span>
+            </div>
+            <p class="suggestion-help">Edit freely - only what you approve is sent to the customer, through Intercom.</p>
+            <textarea id="replyEditor" rows="6" aria-label="Reply to customer"></textarea>
+            <div id="suggestionSources" class="sources hidden"><small>SOURCES USED</small><ul id="suggestionSourceList"></ul></div>
+            <div class="composer-actions agent-actions">
+              <button id="noteToggle" class="attach-button" type="button">Internal note</button>
+              <button id="approveButton" class="send-button" type="button"><span>Approve &amp; send</span> ➜</button>
+            </div>
+            <div id="noteArea" class="note-area hidden">
+              <textarea id="noteEditor" rows="3" placeholder="Internal note for the team (never shown to the customer)" aria-label="Internal note"></textarea>
+              <div class="composer-actions agent-actions">
+                <span></span>
+                <button id="noteButton" class="attach-button" type="button">Add note</button>
+              </div>
+            </div>
+            <p id="actionStatus" class="action-status"></p>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script src="/static/agent.js"></script>
+</body>
+</html>

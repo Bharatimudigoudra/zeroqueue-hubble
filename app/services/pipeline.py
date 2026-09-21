@@ -199,3 +199,27 @@ def trace_for(session_id: str) -> dict:
 
 def reset_all() -> None:
     _SESSIONS.clear()
+
+
+def handoff_sessions() -> List[dict]:
+    """Summaries of every conversation a human now owns (agent console)."""
+    summaries = []
+    for session_id, sess in _SESSIONS.items():
+        if sess["status"] != "handoff":
+            continue
+        customer_texts = [m["text"] for m in sess["messages"]
+                          if m["role"] == "customer"]
+        summaries.append({
+            "session_id": session_id,
+            "last_customer_message": customer_texts[-1] if customer_texts else "",
+            "message_count": len(sess["messages"]),
+            "handoff_reason": sess["trace"].get("handoff_reason"),
+            "confidence_band": sess["trace"].get("confidence_band"),
+        })
+    return summaries
+
+
+def transcript_for(session_id: str) -> Optional[List[dict]]:
+    """The full stored transcript for one session, or None if unknown."""
+    sess = _SESSIONS.get(session_id)
+    return list(sess["messages"]) if sess else None
