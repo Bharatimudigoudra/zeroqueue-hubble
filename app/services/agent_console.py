@@ -7,7 +7,6 @@ the console is another channel on top of the same services, not a rewrite.
 """
 import html
 import logging
-import time
 from typing import List, Optional
 
 from app.adapters import intercom
@@ -106,12 +105,12 @@ def approve_reply(session_id: str, body: str) -> dict:
             return {"sent": False, "reason": "conversation_create_failed"}
         result = intercom.reply(conversation_id,
                                 html.escape(body).replace("\n", "<br>"))
-        part_id = str(result.get("id") or f"console-{time.time()}")
-        # Show the reply in the customer chat immediately. If the webhook
-        # later delivers the same part, the store dedupe keeps one bubble.
-        handoff_store.save_human_reply(session_id, part_id, body)
+        # Intercom sends the approved reply back through its webhook. That is
+        # the one place where human replies are saved for the customer chat.
+        # Saving here as well creates a second row because Intercom's reply
+        # response and webhook can use different IDs for the same message.
         return {"sent": True, "conversation_id": conversation_id,
-                "part_id": part_id}
+                "part_id": str(result.get("id") or "")}
     except Exception as exc:
         log.exception("Agent console reply failed")
         return {"sent": False, "reason": type(exc).__name__}
