@@ -108,11 +108,20 @@ def load_from_kb(kb: dict) -> Tuple[int, int]:
     return brands, len(_INDEX)
 
 
-def _local_search(query: str, top_k: int) -> List[Chunk]:
+def _local_search(query: str, top_k: int, brand: str = "") -> List[Chunk]:
+    """Score local chunks, optionally limiting the candidates to one brand."""
+    candidates = _INDEX
+    if brand:
+        wanted_brand = brand.casefold().strip()
+        candidates = [
+            chunk for chunk in _INDEX
+            if chunk.title.casefold().strip() == wanted_brand
+        ]
+
     q_terms = set(tokenize(query))
     scored = []
     if q_terms:
-        for chunk in _INDEX:
+        for chunk in candidates:
             body_terms = set(tokenize(f"{chunk.title} {chunk.section} {chunk.text}"))
             hits = len(q_terms & body_terms)
             if not hits:
@@ -136,16 +145,17 @@ async def _moss_search(query: str, top_k: int) -> List[Chunk]:
     return passages
 
 
-def search(query: str, top_k: int = 3) -> dict:
-    """Retrieve passages with Moss when ready, otherwise use local scoring."""
+def search(query: str, top_k: int = 3, brand: str = "") -> dict:
+    """Retrieve passages, scoping local fallback candidates to a known brand."""
     start = time.perf_counter()
     provider = "moss" if _MOSS_READY else "local_fallback"
     try:
-        passages = _run(_moss_search(query, top_k)) if _MOSS_READY else _local_search(query, top_k)
+        passages = (_run(_moss_search(query, top_k)) if _MOSS_READY
+                    else _local_search(query, top_k, brand))
     except Exception as exc:
         log.warning("Moss query failed; using local fallback: %s", exc)
         provider = "local_fallback"
-        passages = _local_search(query, top_k)
+        passages = _local_search(query, top_k, brand)
     retrieval_ms = (time.perf_counter() - start) * 1000
     return {"passages": passages, "retrieval_ms": round(retrieval_ms, 1),
             "provider": provider}

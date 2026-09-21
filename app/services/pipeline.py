@@ -136,7 +136,9 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
         query = "(customer sent an attachment with no readable text)"
 
     # 1. Retrieve (local index today, real Moss tomorrow - same signature).
-    retrieval = moss_service.search(query)
+    # A confirmed brand narrows the local fallback before keyword scoring.
+    # This also covers brands read from attachment OCR above.
+    retrieval = moss_service.search(query, brand=brand or "")
     passages = retrieval["passages"]
 
     # 2. Evidence-based confidence + escalation decision (never the LLM's).
