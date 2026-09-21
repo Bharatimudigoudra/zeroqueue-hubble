@@ -43,6 +43,24 @@ def _contact_identity(contact: Dict[str, Any]) -> Dict[str, str]:
     return {"id": contact_id, "role": role}
 
 
+def _get(path: str) -> Dict[str, Any]:
+    response = httpx.get(f"{config.INTERCOM_API_BASE}{path}", headers=_headers(),
+                         timeout=30)
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError:
+        response_excerpt = " ".join(response.text.split())[:500]
+        log.error("Intercom GET %s failed with HTTP %s: %s",
+                  path, response.status_code, response_excerpt or "(empty response)")
+        raise
+    return response.json()
+
+
+def get_conversation(conversation_id: str) -> Dict[str, Any]:
+    """Retrieve one conversation - proves Intercom read access (work plan)."""
+    return _get(f"/conversations/{conversation_id}")
+
+
 def create_contact(external_id: str,
                    name: str = "ZeroQueue web visitor") -> Dict[str, str]:
     body = {"role": "lead", "external_id": external_id, "name": name}

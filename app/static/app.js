@@ -105,16 +105,36 @@ function updateTrace(trace = {}) {
   byId("sourceSection").classList.toggle("hidden", !(trace.sources || []).length);
 }
 
-async function sendMessage() {
-  const text = input.value.trim();
-  if (busy || (!text && !selectedFile)) return;
-  const file = selectedFile;
-  const sentImageUrl = file?.type?.startsWith("image/") ? URL.createObjectURL(file) : null;
-  addMessage("customer", text || `(attached ${file.name})`, sentImageUrl);
-  input.value = "";
-  input.style.height = "auto";
-  showFile(null);
-  fileInput.value = "";
+function showError(message, retry) {
+  byId("welcome")?.remove();
+  const row = document.createElement("div");
+  row.className = "message-row system";
+  const bubble = document.createElement("div");
+  bubble.className = "message";
+  bubble.appendChild(document.createTextNode(`Something went wrong: ${message}. `));
+  const retryButton = document.createElement("button");
+  retryButton.type = "button";
+  retryButton.className = "retry-button";
+  retryButton.textContent = "Try again";
+  retryButton.addEventListener("click", () => { row.remove(); retry(); });
+  bubble.appendChild(retryButton);
+  row.appendChild(bubble);
+  messages.appendChild(row);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+async function sendMessage(retry = null) {
+  const text = retry ? retry.text : input.value.trim();
+  const file = retry ? retry.file : selectedFile;
+  if (busy || (!text && !file)) return;
+  if (!retry) {
+    const sentImageUrl = file?.type?.startsWith("image/") ? URL.createObjectURL(file) : null;
+    addMessage("customer", text || `(attached ${file.name})`, sentImageUrl);
+    input.value = "";
+    input.style.height = "auto";
+    showFile(null);
+    fileInput.value = "";
+  }
   const form = new FormData();
   form.append("session_id", sessionId());
   form.append("message", text);
@@ -131,7 +151,7 @@ async function sendMessage() {
     updateTrace(body.trace);
   } catch (error) {
     typing.remove();
-    addMessage("system", `Something went wrong: ${error.message}`);
+    showError(error.message, () => sendMessage({ text, file }));
   } finally { setBusy(false); input.focus(); }
 }
 
@@ -154,7 +174,7 @@ async function talkToHuman() {
     updateTrace(body.trace);
   } catch (error) {
     typing.remove();
-    addMessage("system", `Something went wrong: ${error.message}`);
+    showError(error.message, talkToHuman);
   } finally {
     launchers.forEach((button) => button.classList.remove("working"));
     setBusy(false);

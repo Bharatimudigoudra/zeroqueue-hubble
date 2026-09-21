@@ -4,10 +4,13 @@
 Serves the exact API contract the ZeroQueue web page speaks:
   GET  /health                  status pill (no secrets)
   POST /api/chat                one customer message (+ optional file)
+  POST /api/agent/chat          documented alias of /api/chat (work plan)
   POST /api/handoff             "Talk to a human" button
   GET  /api/trace/{session_id}  the safe Moss Trace subset for the page
   POST /api/demo/reset          wipe demo state (x-demo-secret header)
   POST /api/ingest              replace the KB with a posted JSON body
+  GET  /agent                   support-agent console (review + approve)
+  GET  /api/agent/conversations handoff queue for the console
 """
 import json
 
@@ -18,11 +21,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app import config
+from app.api_agent import router as agent_router
 from app.api_intercom import router as intercom_router
 from app.services import attachment_service, handoff_store, moss_service, pipeline
 
 app = FastAPI(title="ZeroQueue + Hubble", version="1.0.0")
 app.include_router(intercom_router)
+app.include_router(agent_router)
 
 # FastAPI serves the browser UI and API from one Python service.
 STATIC_DIR = config.REPO_ROOT / "app" / "static"
@@ -32,6 +37,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", include_in_schema=False)
 def home():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/agent", include_in_schema=False)
+def agent_console_page():
+    """Support-agent console: review AI answers, approve replies, add notes."""
+    return FileResponse(STATIC_DIR / "agent.html")
 
 # CORS stays available for optional direct API development clients.
 app.add_middleware(
@@ -131,6 +142,14 @@ async def chat(session_id: str = Form(...),
 
     result = pipeline.run_pipeline(session_id, message, attachment_text)
     return {**result, "attachment_note": attachment_note}
+
+
+@app.post("/api/agent/chat")
+async def agent_chat_alias(session_id: str = Form(...),
+                           message: str = Form(""),
+                           file: UploadFile = File(default=None)):
+    """Alias of /api/chat under the path named in the UI work plan."""
+    return await chat(session_id=session_id, message=message, file=file)
 
 
 @app.get("/api/human-replies/{session_id}")

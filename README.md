@@ -124,6 +124,14 @@ The built-in chat creates a real Intercom conversation only when a handoff is ne
 
 If Intercom is not configured or its API rejects the handoff, the UI does not claim success. It says the AI is paused and the conversation is only marked for review.
 
+The customer endpoint also answers on its work-plan alias `POST /api/agent/chat`, and the full request/response contract for every route lives in `docs\api-contract.md`.
+
+## Agent console (/agent)
+
+Open `/agent` on the same server for the support-agent side. The console lists every escalated conversation with its handoff reason, shows the full transcript, and generates the AI's suggested answer for the latest customer message - editable before anything is sent. "Approve & send" posts the reply to the linked Intercom conversation as an admin comment, so it lands in the customer's chat like any human reply (and appears there immediately, with webhook dedupe preventing a double bubble). "Internal note" posts an Intercom note the customer never sees. If a conversation predates the Intercom link, the console runs the normal handoff creation first. The AI backend stays untouched: the console only reads pipeline state and calls the same services.
+
+The console API is open by default for the local demo. Set `AGENT_CONSOLE_KEY` in `.env` before sharing a deployed URL; the page then asks for the key once and remembers it in the browser.
+
 Private `.env` values needed:
 
 ```text
