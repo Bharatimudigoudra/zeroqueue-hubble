@@ -26,8 +26,17 @@ function escapeHtml(text) {
 }
 
 function renderMarkdown(text) {
-  const safeText = escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // Escape first. Formatting is added only after user/model text is safe.
+  let safeText = escapeHtml(text);
+
+  // Models sometimes return a whole list as one paragraph. Put common list
+  // markers on their own lines so the normal line renderer can handle them.
+  safeText = safeText
+    .replace(/\s+(?=(?:\d+\.)\s+)/g, "\n")
+    .replace(/\s+(?=[*-]\s+)/g, "\n")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, "$1<em>$2</em>");
+
   const lines = safeText.split("\n");
   let result = "";
   let listIsOpen = false;

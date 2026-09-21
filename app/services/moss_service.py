@@ -118,17 +118,29 @@ def _local_search(query: str, top_k: int, brand: str = "") -> List[Chunk]:
             if chunk.title.casefold().strip() == wanted_brand
         ]
 
-    q_terms = set(tokenize(query))
+    # The typed question carries the customer's intent. OCR may contain dozens
+    # of unrelated receipt/image words, so do not let it dilute that intent.
+    typed_query = re.split(r"attachment text \(ocr\):", query,
+                           maxsplit=1, flags=re.IGNORECASE)[0]
+    q_terms = set(tokenize(typed_query))
+    if not q_terms:
+        q_terms = set(tokenize(query)[:12])
+
     scored = []
     if q_terms:
         for chunk in candidates:
-            body_terms = set(tokenize(f"{chunk.title} {chunk.section} {chunk.text}"))
-            hits = len(q_terms & body_terms)
-            if not hits:
+            section_terms = set(tokenize(chunk.section))
+            body_terms = set(tokenize(chunk.text))
+            section_hits = len(q_terms & section_terms)
+            body_hits = len(q_terms & body_terms)
+            if not section_hits and not body_hits:
                 continue
-            score = hits / len(q_terms)
-            title_hits = len(q_terms & set(tokenize(chunk.title)))
-            score += 0.2 * (title_hits / len(q_terms))
+
+            # Section names are the KB's intent labels (for example "How to
+            # redeem (app)"). A section match must beat incidental body noise.
+            coverage = body_hits / len(q_terms)
+            intent_boost = 0.35 * section_hits
+            score = min(1.0, coverage + intent_boost)
             scored.append(replace(chunk, score=round(score, 3)))
     return sorted(scored, key=lambda item: item.score, reverse=True)[:top_k]
 

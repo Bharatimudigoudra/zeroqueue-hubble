@@ -1,5 +1,5 @@
 """Brand scoping for the local retrieval fallback."""
-from app.services import moss_service, pipeline
+from app.services import confidence, moss_service, pipeline
 from app.services.chunking import Chunk
 
 
@@ -64,3 +64,44 @@ def test_ocr_brand_is_passed_to_retrieval(monkeypatch):
 
     assert seen["brand"] == "Amazon shopping"
     assert "Amazon shopping" in seen["query"]
+
+
+def _intent_chunk(chunk_id: str, section: str, text: str) -> Chunk:
+    return Chunk(
+        id=chunk_id, title="Amazon shopping", text=text, section=section,
+        section_kind="test", brand_key="amazon",
+    )
+
+
+def test_redeem_intent_outranks_ocr_noise_and_answers(monkeypatch):
+    monkeypatch.setattr(moss_service, "_MOSS_READY", False)
+    monkeypatch.setattr(moss_service, "_INDEX", [
+        _intent_chunk("terms", "Terms and conditions",
+                      "Voucher limits, cash rules, business marketplace restrictions"),
+        _intent_chunk("redeem", "How to redeem (app)",
+                      "Open Amazon Pay, choose Gift Card, enter the code and add it"),
+    ])
+
+    result = moss_service.search(
+        "What should I check, and how do I redeem it correctly? "
+        "Attachment text (OCR): IKEA outlet max fashion receipt invalid random words",
+        brand="Amazon shopping",
+    )
+
+    assert result["passages"][0].id == "redeem"
+    assert confidence.band(result["passages"]) != "low"
+
+
+def test_uncovered_brand_intent_stays_low_confidence(monkeypatch):
+    monkeypatch.setattr(moss_service, "_MOSS_READY", False)
+    monkeypatch.setattr(moss_service, "_INDEX", [
+        _intent_chunk("redeem", "How to redeem (app)",
+                      "Open Amazon Pay, choose Gift Card, enter the code"),
+    ])
+
+    result = moss_service.search(
+        "Can I change the delivery address after dispatch?",
+        brand="Amazon shopping",
+    )
+
+    assert confidence.band(result["passages"]) == "low"
