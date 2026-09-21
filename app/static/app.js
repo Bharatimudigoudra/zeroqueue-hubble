@@ -16,6 +16,22 @@ function sessionId() {
   return id;
 }
 
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/^\s*[-*]\s+(.+)$/gm, "• $1")
+    .replace(/\n/g, "<br>");
+}
+
 function addMessage(role, text, imageUrl = null) {
   byId("welcome")?.remove();
   const row = document.createElement("div");
@@ -33,7 +49,11 @@ function addMessage(role, text, imageUrl = null) {
     label.className = "human-label";
     label.textContent = "Human support";
     bubble.appendChild(label);
-    bubble.appendChild(document.createTextNode(text));
+    const content = document.createElement("span");
+    content.innerHTML = renderMarkdown(text);
+    bubble.appendChild(content);
+  } else if (role === "bot") {
+    bubble.innerHTML = renderMarkdown(text);
   } else {
     bubble.textContent = text;
   }
