@@ -389,3 +389,72 @@ def test_message_after_handoff_is_forwarded_to_same_human_queue(client, monkeypa
     assert calls[0]["transcript"][-1] == {
         "role": "customer", "text": "What should I check?"
     }
+
+
+def test_transcript_restores_full_history_with_kinds(client, tmp_path, monkeypatch):
+    from app import config
+    from app.services import handoff_store, pipeline
+
+    monkeypatch.setattr(config, "STATE_DB_PATH", str(tmp_path / "state.db"))
+    pipeline.reset_all()
+    client.post("/api/chat", data={
+        "session_id": "restore-me",
+        "message": "How do I redeem an Amazon gift card?"})
+    client.post("/api/handoff", json={"session_id": "restore-me"})
+    client.post("/api/chat", data={
+        "session_id": "restore-me", "message": "still fails in the app"})
+    pipeline.append_human_message("restore-me", "Looking into it now.")
+
+    body = client.get("/api/transcript/restore-me").json()
+    roles = [m["role"] for m in body["messages"]]
+    assert roles == ["customer", "assistant", "assistant",
+                     "customer", "human"]
+    assert body["messages"][1]["kind"] == "answer"
+    assert body["messages"][2]["kind"] == "ack"
+    assert body["messages"][-1]["text"] == "Looking into it now."
+
+    # Unknown sessions restore as an empty conversation, not an error.
+    empty = client.get("/api/transcript/never-seen").json()
+    assert empty == {"messages": [], "last_human_reply_id": 0}
+
+
+def test_transcript_splits_ocr_into_attachment_note(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    # During handoff the stored customer message carries the OCR text; the
+    # transcript endpoint must split it back out for rendering.
+    client.post("/api/handoff", json={"session_id": "ocr-restore"})
+    client.post("/api/chat",
+                data={"session_id": "ocr-restore", "message": "check this"},
+                files={"file": ("voucher.txt", b"VOUCHER CODE IS INVALID",
+                                "text/plain")})
+    body = client.get("/api/transcript/ocr-restore").json()
+    stored = next(m for m in body["messages"] if m["role"] == "customer")
+    assert "Attachment text (OCR)" not in stored["text"]
+    assert "VOUCHER CODE IS INVALID" in stored["attachment_note"]
+
+
+def test_reset_button_clears_paused_state_and_history(client, tmp_path, monkeypatch):
+    from app import config
+    from app.services import handoff_store, pipeline
+
+    monkeypatch.setattr(config, "STATE_DB_PATH", str(tmp_path / "state.db"))
+    pipeline.reset_all()
+    client.post("/api/handoff", json={"session_id": "reset-me"})
+    pipeline.append_human_message("reset-me", "human was here")
+    handoff_store.save_human_reply("reset-me", "p1", "human was here")
+    assert pipeline.is_handoff("reset-me")
+
+    assert client.post("/api/reset",
+                       json={"session_id": "reset-me"}).json() == {"status": "reset"}
+    assert not pipeline.is_handoff("reset-me")
+    assert pipeline.transcript_for("reset-me") is None
+    assert handoff_store.replies_after("reset-me", 0) == []
+    assert client.get("/api/transcript/reset-me").json()["messages"] == []
+
+    # The next message starts a genuinely fresh AI conversation.
+    fresh = client.post("/api/chat", data={
+        "session_id": "reset-me",
+        "message": "How do I redeem an Amazon gift card?"}).json()
+    assert fresh["status"] == "answered"

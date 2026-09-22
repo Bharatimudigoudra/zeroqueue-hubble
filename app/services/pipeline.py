@@ -9,7 +9,9 @@ import re
 import time
 from typing import Dict, List, Optional
 
-from app.services import answer_service, clarification, confidence, escalation, intercom_handoff, moss_service
+from app.services import (answer_service, clarification, confidence,
+                            escalation, handoff_store, intercom_handoff,
+                            moss_service)
 
 
 # Generic field labels a voucher template prints ABOVE the actual error
@@ -135,7 +137,8 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
             "handoff_reason": None,
         }
         clarifier = clarification.question(brand, need_error=not error_supplied)
-        sess["messages"].append({"role": "assistant", "text": clarifier})
+        sess["messages"].append({"role": "assistant", "text": clarifier,
+                                  "kind": "clarifying"})
         return {"answer": clarifier, "status": "clarifying", "citations": [],
                 "trace": sess["trace"]}
     if following_up:
@@ -210,7 +213,7 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
         if reason != "customer_requested_human":
             ack = ("I do not have a reliable answer in the support knowledge "
                    "base, so I will not guess. " + ack)
-        sess["messages"].append({"role": "assistant", "text": ack})
+        sess["messages"].append({"role": "assistant", "text": ack, "kind": "ack"})
         _record_trace(sess, retrieval["retrieval_ms"], total_start, band,
                       "escalated", passages, reason)
         return {"answer": ack, "status": "handoff", "citations": [],
@@ -219,7 +222,8 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
     # 3. Grounded answer with citations.
     answer, citations = answer_service.build_answer(query, passages,
                                                     error_line=error_line)
-    sess["messages"].append({"role": "assistant", "text": answer})
+    sess["messages"].append({"role": "assistant", "text": answer,
+                             "kind": "answer"})
     _record_trace(sess, retrieval["retrieval_ms"], total_start, band,
                   "answered", passages)
     return {"answer": answer, "status": "answered", "citations": citations,
@@ -241,7 +245,8 @@ def request_handoff(session_id: str) -> dict:
               if handoff["confirmed"] else
               ("I have paused the AI and marked this conversation for human "
                "review. The live support inbox is not connected right now."))
-    sess["messages"].append({"role": "assistant", "text": answer})
+    sess["messages"].append({"role": "assistant", "text": answer,
+                             "kind": "ack"})
     return {"answer": answer, "status": "handoff", "citations": [],
             "trace": sess["trace"], "handoff_confirmed": handoff["confirmed"]}
 
@@ -278,6 +283,22 @@ def handoff_sessions() -> List[dict]:
             "confidence_band": sess["trace"].get("confidence_band"),
         })
     return summaries
+
+
+def append_human_message(session_id: str, body: str) -> None:
+    """Record a human-support reply in the live transcript so a page
+    refresh can restore it in order. No-op for unknown sessions."""
+    sess = _SESSIONS.get(session_id)
+    if sess is not None and body.strip():
+        sess["messages"].append({"role": "human", "text": body.strip()})
+
+
+def reset_session(session_id: str) -> None:
+    """Fully clear one conversation: transcript, paused/escalated state,
+    pinned brand, and its stored human replies / Intercom link. The next
+    message from this session id starts a genuinely fresh AI chat."""
+    _SESSIONS.pop(session_id, None)
+    handoff_store.clear_session(session_id)
 
 
 def transcript_for(session_id: str) -> Optional[List[dict]]:

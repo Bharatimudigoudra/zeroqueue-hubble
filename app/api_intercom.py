@@ -86,8 +86,9 @@ def process_event(payload: dict):
     is_operator_reply = (topic == "conversation.operator.replied"
                          and author_type in {"bot", "admin", "team"})
     if is_admin_reply or is_operator_reply:
-        handoff_store.save_human_reply(
-            session_id, str(message.get("id") or payload.get("id") or ""), body)
+        if handoff_store.save_human_reply(
+                session_id, str(message.get("id") or payload.get("id") or ""), body):
+            pipeline.append_human_message(session_id, body)
         return
     if author_type not in ("user", "lead", "contact"):
         return

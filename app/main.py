@@ -152,6 +152,38 @@ async def agent_chat_alias(session_id: str = Form(...),
     return await chat(session_id=session_id, message=message, file=file)
 
 
+@app.get("/api/transcript/{session_id}")
+def conversation_transcript(session_id: str):
+    """The stored conversation for the customer chat's page-load restore.
+    Customer entries carry any OCR text separately as attachment_note so the
+    UI can render the bubble plus an attachment line, exactly like live."""
+    messages = pipeline.transcript_for(session_id) or []
+    rendered = []
+    for msg in messages:
+        entry = {"role": msg["role"], "text": msg["text"]}
+        if msg.get("kind"):
+            entry["kind"] = msg["kind"]
+        marker = "\n\nAttachment text (OCR):"
+        if msg["role"] == "customer" and marker in msg["text"]:
+            text, ocr = msg["text"].split(marker, 1)
+            entry = {"role": "customer", "text": text.strip(),
+                     "attachment_note": f"Attachment text (OCR):{ocr}".strip()}
+        rendered.append(entry)
+    replies = handoff_store.replies_after(session_id, 0)
+    return {"messages": rendered,
+            "last_human_reply_id": max((r["id"] for r in replies), default=0)}
+
+
+@app.post("/api/reset")
+def reset_conversation(req: HandoffRequest):
+    """Reset button: wipe this conversation server-side (transcript, paused
+    state, human replies) so the next message starts a fresh AI chat."""
+    if not req.session_id.strip():
+        raise HTTPException(status_code=400, detail="session_id is required.")
+    pipeline.reset_session(req.session_id)
+    return {"status": "reset"}
+
+
 @app.get("/api/human-replies/{session_id}")
 def human_replies(session_id: str, after_id: int = 0):
     # The browser polls this route every five seconds. Only return replies while

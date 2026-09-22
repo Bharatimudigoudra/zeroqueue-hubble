@@ -61,11 +61,25 @@ def first_event(event_id: str) -> bool:
             return False
 
 
-def save_human_reply(session_id: str, part_id: str, body: str):
+def save_human_reply(session_id: str, part_id: str, body: str) -> bool:
+    """Store a human reply once. Returns True only for the first insert, so
+    callers can mirror it into the live transcript without duplicating on
+    webhook retries."""
     with connection() as conn:
-        conn.execute("INSERT OR IGNORE INTO human_replies"
-                     " (session_id,intercom_part_id,body,created_at) VALUES (?,?,?,?)",
-                     (session_id, part_id or None, body, time.time()))
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO human_replies"
+            " (session_id,intercom_part_id,body,created_at) VALUES (?,?,?,?)",
+            (session_id, part_id or None, body, time.time()))
+        return cur.rowcount > 0
+
+
+def clear_session(session_id: str):
+    """Forget a session's human replies and Intercom link (reset button)."""
+    with connection() as conn:
+        conn.execute("DELETE FROM human_replies WHERE session_id=?",
+                     (session_id,))
+        conn.execute("DELETE FROM intercom_links WHERE session_id=?",
+                     (session_id,))
 
 
 def replies_after(session_id: str, after_id: int = 0):
