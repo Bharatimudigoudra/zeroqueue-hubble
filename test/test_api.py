@@ -27,14 +27,25 @@ def test_chat_answers_with_citations_and_trace(client):
 
 
 def test_handoff_then_ai_stays_silent(client):
+    from app.services import pipeline
     resp = client.post("/api/handoff", json={"session_id": "t2"})
     assert resp.json()["status"] == "handoff"
     assert resp.json()["trace"]["state"] == "escalated"
+    # The pause notice is shown once at handoff. Later customer messages
+    # while paused are still stored and forwarded, with no repeated banner.
     resp = client.post("/api/chat", data={"session_id": "t2",
                                           "message": "any discount on zepto?"})
     body = resp.json()
     assert body["status"] == "handoff"
-    assert "AI is paused" in body["answer"]
+    assert body["answer"] == ""
+    resp = client.post("/api/chat", data={"session_id": "t2",
+                                          "message": "hello, anyone there?"})
+    body = resp.json()
+    assert body["status"] == "handoff"
+    assert body["answer"] == ""
+    transcript = pipeline._SESSIONS["t2"]["messages"]
+    assert [m["role"] for m in transcript[-2:]] == ["customer", "customer"]
+    assert transcript[-1]["text"] == "hello, anyone there?"
 
 
 def test_low_confidence_hands_off(client):
@@ -215,7 +226,8 @@ def test_confident_answer_does_not_escalate_and_ai_stays_active(client, monkeypa
     assert first["status"] == "answered"
     assert first["trace"]["confidence_band"] in ("medium", "high")
     assert first["trace"]["handoff_reason"] is None
-    assert 'say "human"' in first["answer"]
+    assert 'say "human"' not in first["answer"]
+    assert "take over" not in first["answer"]
     assert pipeline.handoff_sessions() == []
 
     follow_up = client.post("/api/chat", data={

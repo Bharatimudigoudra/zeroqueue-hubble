@@ -24,7 +24,7 @@ PROMPT_TEMPLATE = """You are ZeroQueue, a customer-support assistant for Hubble 
 
 Rules:
 - Answer ONLY using the retrieved passages below. If they do not contain
-  the answer, say you do not have a reliable answer and offer a human.
+  the answer, say you do not have a reliable answer in the knowledge base.
 - If the customer message includes "Attachment text (OCR)", treat it as
   something the customer showed you (a photo, screenshot, or receipt)
   and use it together with the passages - e.g. match a brand name or
@@ -32,9 +32,10 @@ Rules:
 - If the customer message or the OCR shows an error (for example a voucher
   code being rejected), address that error FIRST: say what to check using
   only the passages. If no passage covers that exact error, say so honestly
-  and offer the human handoff - never invent a cause or a fix.
+  - never invent a cause or a fix.
 - Then answer the how-to question from the passages.
-- Keep it short: direct answer, then one next step.
+- Keep it short: direct answer only. Do not add closing offers or next
+  steps - escalation is handled by a separate Ask Human button.
 - End with a "Sources:" line listing the [n] labels you actually used.
 
 Customer question:
@@ -67,7 +68,8 @@ def _chunk_body(chunk: Chunk, limit: int = 400) -> str:
 
 def quote_issue_answer(passages: List[Chunk], error_line: str) -> str:
     """MOCK answer for a reported error: honest about KB coverage, then the
-    grounded checks and the how-to steps, then the human handoff offer."""
+    grounded checks and the how-to steps. The Ask Human button covers
+    escalation, so no trailing handoff offer is appended."""
     redeem = next((p for p in passages if p.section_kind.startswith("redeem")), None)
     rules = next((p for p in passages
                   if p.section_kind in ("restrictions", "terms-p1", "validity")), None)
@@ -82,8 +84,6 @@ def quote_issue_answer(passages: List[Chunk], error_line: str) -> str:
                      f"{_chunk_body(rules, 260)}")
     if redeem:
         parts.append(f"To redeem correctly: {_chunk_body(redeem, 400)}")
-    parts.append("If the code still shows invalid after these checks, say "
-                 "\"human\" and a teammate will take over.")
     return "\n\n".join(parts)
 
 
@@ -94,10 +94,7 @@ def quote_chunk(passages: List[Chunk]) -> str:
     repeated_heading = f"{top.title} - {top.section}:"
     if body.lower().startswith(repeated_heading.lower()):
         body = body[len(repeated_heading):].strip()
-    body = body[:400]
-    return (f"{body}\n\n"
-            f"Next step: if this does not solve it, say \"human\" and "
-            f"a teammate will take over.")
+    return body[:400]
 
 
 def grounded_answer(query: str, passages: List[Chunk]) -> str:
