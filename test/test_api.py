@@ -194,67 +194,57 @@ def test_bad_extra_knowledge_base_fails_loudly(tmp_path):
         _read_all_kb_files(tmp_path)
 
 
-def test_yes_after_handoff_offer_completes_handoff(client, monkeypatch):
-    from app.services import answer_service, intercom_handoff, pipeline
+def test_confident_answer_does_not_escalate_and_ai_stays_active(client, monkeypatch):
+    """A supported answer must not create a console handoff or pause the AI."""
+    from app.services import intercom_handoff, pipeline
 
     pipeline.reset_all()
     monkeypatch.setattr(
-        answer_service, "build_answer",
-        lambda query, passages: (
-            "I do not have a reliable answer. Would you like me to connect "
-            "you with a support agent?\n\nSources: [1] Test",
-            [{"label": "[1] Test", "url": None}],
-        ),
+        intercom_handoff, "send",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("confident answers must not call the handoff")),
     )
+
+    first = client.post("/api/chat", data={
+        "session_id": "confident-stays-active",
+        "message": "How do I redeem an Amazon gift card?",
+    }).json()
+    assert first["status"] == "answered"
+    assert first["trace"]["confidence_band"] in ("medium", "high")
+    assert first["trace"]["handoff_reason"] is None
+    assert 'say "human"' in first["answer"]
+    assert pipeline.handoff_sessions() == []
+
+    follow_up = client.post("/api/chat", data={
+        "session_id": "confident-stays-active",
+        "message": "Where can I use the Amazon voucher?",
+    }).json()
+    assert follow_up["status"] == "answered"
+    assert follow_up["trace"]["handoff_reason"] is None
+
+
+
+
+def test_explicit_human_request_still_escalates(client, monkeypatch):
+    """An explicit request for a human must keep the real handoff path."""
+    from app.services import intercom_handoff, pipeline
+
+    pipeline.reset_all()
     sent = []
     monkeypatch.setattr(
         intercom_handoff, "send",
         lambda *args, **kwargs: sent.append((args, kwargs)) or
-        {"confirmed": True, "conversation_id": "ic-test"},
+        {"confirmed": True, "conversation_id": "ic-explicit-human"},
     )
 
-    first = client.post("/api/chat", data={
-        "session_id": "handoff-offer-yes",
-        "message": "How do I redeem an Amazon gift card?",
+    result = client.post("/api/chat", data={
+        "session_id": "explicit-human-request",
+        "message": "Please connect me to a human",
     }).json()
-    assert first["status"] == "answered"
-    assert "connect you with a support agent" in first["answer"]
-
-    second = client.post("/api/chat", data={
-        "session_id": "handoff-offer-yes", "message": "yes"
-    }).json()
-    assert second["status"] == "handoff"
-    assert second["handoff_confirmed"] is True
-    assert second["trace"]["handoff_reason"] == "customer_requested_human"
-    assert "A human agent has been notified" in second["answer"]
-    assert "reply right here in this chat shortly" in second["answer"]
+    assert result["status"] == "handoff"
+    assert result["trace"]["handoff_reason"] == "customer_requested_human"
+    assert result["handoff_confirmed"] is True
     assert len(sent) == 1
-    transcript = sent[0][0][5]
-    assert {"role": "customer", "text": "yes"} in transcript
-
-
-def test_no_after_handoff_offer_keeps_ai_active(client, monkeypatch):
-    from app.services import answer_service, intercom_handoff, pipeline
-
-    pipeline.reset_all()
-    monkeypatch.setattr(
-        answer_service, "build_answer",
-        lambda query, passages: (
-            "Would you like me to connect you with a support agent?", []),
-    )
-    monkeypatch.setattr(
-        intercom_handoff, "send",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no handoff")),
-    )
-    client.post("/api/chat", data={
-        "session_id": "handoff-offer-no",
-        "message": "How do I redeem an Amazon gift card?",
-    })
-    second = client.post("/api/chat", data={
-        "session_id": "handoff-offer-no", "message": "no thanks"
-    }).json()
-    assert second["status"] == "answered"
-    assert "AI will stay active" in second["answer"]
 
 
 def test_ocr_attachment_text_drives_retrieval_to_amazon(client, monkeypatch):

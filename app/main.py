@@ -154,6 +154,12 @@ async def agent_chat_alias(session_id: str = Form(...),
 
 @app.get("/api/human-replies/{session_id}")
 def human_replies(session_id: str, after_id: int = 0):
+    # The browser polls this route every five seconds. Only return replies while
+    # this live session is actually waiting for a human. This prevents an old
+    # Intercom reply saved under a reused browser session id from appearing
+    # after a new, confident AI answer.
+    if not pipeline.is_handoff(session_id):
+        return {"replies": []}
     return {"replies": handoff_store.replies_after(session_id, after_id)}
 
 

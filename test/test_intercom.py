@@ -50,9 +50,10 @@ def test_bad_webhook_signature_is_rejected(client, monkeypatch):
 
 def test_webhook_dedupes_and_human_reply_returns_to_browser(client, monkeypatch, tmp_path):
     from app import config
-    from app.services import handoff_store
+    from app.services import handoff_store, pipeline
     monkeypatch.setattr(config, "INTERCOM_WEBHOOK_SECRET", "secret")
     monkeypatch.setattr(config, "STATE_DB_PATH", str(tmp_path / "state.db"))
+    pipeline.request_handoff("browser-session")
     handoff_store.link("browser-session", "ic-convo-1")
     payload = _event()
     first = _signed(client, payload, "secret")
@@ -170,10 +171,11 @@ def test_existing_user_search_preserves_user_role(monkeypatch):
 
 def test_operator_workflow_reply_returns_to_browser(client, monkeypatch, tmp_path):
     from app import config
-    from app.services import handoff_store
+    from app.services import handoff_store, pipeline
 
     monkeypatch.setattr(config, "INTERCOM_WEBHOOK_SECRET", "secret")
     monkeypatch.setattr(config, "STATE_DB_PATH", str(tmp_path / "operator-state.db"))
+    pipeline.request_handoff("operator-browser-session")
     handoff_store.link("operator-browser-session", "ic-convo-1")
     payload = _event(
         event_id="operator-event-1",
@@ -211,3 +213,20 @@ def test_non_reply_admin_event_is_not_shown_as_human_reply(client, monkeypatch, 
     replies = client.get(
         "/api/human-replies/note-browser-session").json()["replies"]
     assert replies == []
+
+
+def test_old_human_reply_is_hidden_for_an_active_ai_session(client, monkeypatch, tmp_path):
+    """A saved reply from an older handoff must not pop into a new AI chat."""
+    from app import config
+    from app.services import handoff_store, pipeline
+
+    pipeline.reset_all()
+    monkeypatch.setattr(config, "STATE_DB_PATH", str(tmp_path / "stale-reply.db"))
+    handoff_store.save_human_reply("reused-session", "old-part", "Old reply")
+
+    answer = client.post("/api/chat", data={
+        "session_id": "reused-session",
+        "message": "How do I redeem an Amazon gift card?",
+    }).json()
+    assert answer["status"] == "answered"
+    assert client.get("/api/human-replies/reused-session").json() == {"replies": []}
