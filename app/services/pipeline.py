@@ -116,10 +116,13 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
     following_up = bool(sess.get("pending_issue"))
     issue_text = f"{sess.get('pending_issue', '')} {current_context}".strip()
     # A brand sticks to the conversation once detected. Generic follow-up
-    # words ("what about the refund?") must not drop the scoping, and only
-    # an explicitly detected new brand may move it.
-    detected_brand = sess.get("pending_brand") or clarification.find_brand(
-        current_context if following_up else issue_text, moss_service.brand_names())
+    # words ("what about the refund?") must not drop the scoping - but a
+    # brand explicitly typed in the CURRENT message always re-pins it.
+    detected_brand = (clarification.find_brand(
+        current_context, moss_service.brand_names())
+        or sess.get("pending_brand")
+        or clarification.find_brand(
+            sess.get("pending_issue", ""), moss_service.brand_names()))
     if detected_brand:
         sess["brand"] = detected_brand
     brand = detected_brand or sess.get("brand", "")
@@ -157,8 +160,14 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
     # 1. Retrieve (local index today, real Moss tomorrow - same signature).
     # A confirmed brand narrows the local fallback before keyword scoring.
     # This also covers brands read from attachment OCR above.
-    retrieval = moss_service.search(query, brand=brand or "")
+    # Wider candidate pool (8): the relevance gate below filters these down,
+    # so retrieval must not cut a relevant chunk before the gate can see it.
+    retrieval = moss_service.search(query, top_k=8, brand=brand or "")
     scored_passages = retrieval["passages"]
+    distinctive = answer_service.distinctive_terms(query, brand)
+    if distinctive and not error_supplied:
+        scored_passages = answer_service.filter_relevant(
+            scored_passages, distinctive)
     passages = list(scored_passages)
 
     # A reported error (typed or read from an attachment) needs the brand's
@@ -192,6 +201,17 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
                 policy_chunks.append(chunk)
                 seen_ids.add(chunk.id)
 
+    # "How long is it valid" must surface the brand's validity chunk - its
+    # keyword score is weak ("valid" vs "validity"), so terms paragraphs
+    # would otherwise bury it.
+    if brand and re.search(r"\b(valid|validity|expire|expiry|expired|expires|"
+                           r"duration)\b|\bhow long\b",
+                           current_context, re.IGNORECASE):
+        for chunk in moss_service.brand_policy_chunks(brand, ("validity",)):
+            if chunk.id not in seen_ids:
+                front.append(chunk)
+                seen_ids.add(chunk.id)
+
     passages = (front + policy_chunks + passages)[:5]
 
     # 2. Evidence-based confidence + escalation decision (never the LLM's).
@@ -199,6 +219,12 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
     # redeem/policy chunks carry no retrieval score, and letting them set
     # the band would either fake confidence or fake weakness.
     band = confidence.band(scored_passages)
+    # Deterministic inclusions (redeem/validity/policy) and relevance-gated
+    # survivors are real evidence; exact-token scoring must not push them to
+    # a false low-confidence handoff.
+    if band == "low" and (front or policy_chunks
+                          or (distinctive and scored_passages)):
+        band = "medium"
     reason = escalation.decide(message or "", band)
     if reason:
         sess["status"] = "handoff"

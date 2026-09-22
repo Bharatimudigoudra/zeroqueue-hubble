@@ -458,3 +458,59 @@ def test_reset_button_clears_paused_state_and_history(client, tmp_path, monkeypa
         "session_id": "reset-me",
         "message": "How do I redeem an Amazon gift card?"}).json()
     assert fresh["status"] == "answered"
+
+
+def test_brand_repins_when_customer_names_a_new_brand(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    first = client.post("/api/chat", data={
+        "session_id": "repin", "message": "My voucher is not working"}).json()
+    assert first["status"] == "clarifying"
+    second = client.post("/api/chat", data={
+        "session_id": "repin", "message": "No amazon voucher"}).json()
+    assert second["status"] == "clarifying"
+    assert "Amazon shopping" in second["answer"]
+    assert pipeline._SESSIONS["repin"]["brand"] == "Amazon shopping"
+    third = client.post("/api/chat", data={
+        "session_id": "repin", "message": "Amazon says invalid code"}).json()
+    assert third["status"] == "answered"
+    assert "Amazon shopping" in third["answer"]
+    assert "Croma" not in third["answer"]
+
+
+def test_mismatched_question_hands_off_instead_of_fake_answer(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    body = client.post("/api/chat", data={
+        "session_id": "mismatch",
+        "message": "Can I use a Myntra gift card to buy a spaceship?"}).json()
+    assert body["status"] == "handoff"
+    assert "do not have a reliable answer" in body["answer"]
+
+
+def test_relevant_answer_uses_the_chunk_that_answers_the_question(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    body = client.post("/api/chat", data={
+        "session_id": "croma-q",
+        "message": "How many Croma gift cards can I use in one order?"}).json()
+    assert body["status"] == "answered"
+    assert "5 virtual cards" in body["answer"]
+    assert "validity" not in body["answer"].lower()
+
+
+def test_answers_are_plain_sentences_without_echoed_questions(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    body = client.post("/api/chat", data={
+        "session_id": "zepto-q",
+        "message": "How long is a Zepto gift card valid?"}).json()
+    assert body["status"] == "answered"
+    assert "12-month validity" in body["answer"]
+    assert "Pine Labs" not in body["answer"]
+    assert "?" not in body["answer"]
+    assert not body["answer"].lstrip().startswith(("1.", "-"))
