@@ -44,6 +44,24 @@ def _intercom_snapshot(session_id: str) -> Optional[dict]:
                 "error": type(exc).__name__}
 
 
+_OCR_MARKER = "\n\nAttachment text (OCR):"
+
+
+def _console_message(msg: dict) -> dict:
+    """One transcript message as the console needs it: attachment metadata
+    (url + OCR text) attached, legacy inline-OCR blobs split apart."""
+    entry = dict(msg)
+    if entry.get("role") == "customer" and _OCR_MARKER in entry.get("text", ""):
+        text, ocr = entry["text"].split(_OCR_MARKER, 1)
+        entry["text"] = text.strip()
+        entry.setdefault("attachment",
+                         {"name": "attachment", "ocr": ocr.strip()})
+    if entry.get("role") == "customer" and not entry.get("text"):
+        name = (entry.get("attachment") or {}).get("name", "a file")
+        entry["text"] = f"(attached {name})"
+    return entry
+
+
 def conversation_detail(session_id: str) -> Optional[dict]:
     transcript = pipeline.transcript_for(session_id)
     if transcript is None:
@@ -52,7 +70,7 @@ def conversation_detail(session_id: str) -> Optional[dict]:
                     if s["session_id"] == session_id), None)
     return {
         "session_id": session_id,
-        "messages": transcript,
+        "messages": [_console_message(m) for m in transcript],
         "handoff_reason": (summary or {}).get("handoff_reason"),
         "confidence_band": (summary or {}).get("confidence_band"),
         "intercom_linked": bool(handoff_store.conversation_for(session_id)),

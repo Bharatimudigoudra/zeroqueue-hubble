@@ -57,3 +57,4 @@ button { cursor:pointer; }
 
 .retry-button { border:0; background:none; color:#08765c; font:inherit; font-weight:800; text-decoration:underline; padding:0 2px; }
 .retry-button:hover { color:var(--green-dark); }
+.message-ocr { margin-top:8px;font-size:11px;opacity:.85;white-space:pre-wrap;overflow-wrap:anywhere;border-top:1px solid rgba(255,255,255,.35);padding-top:6px; }

@@ -14,6 +14,7 @@ shows (e.g. "Read 42 words from receipt.png via OCR").
 """
 import os
 import subprocess
+import uuid
 from pathlib import Path
 from typing import List, Tuple
 
@@ -114,3 +115,15 @@ def extract(filename: str, data: bytes) -> Tuple[str, str]:
     raise UnsupportedFileError(
         f'I cannot read "{ext or "this"}" files yet. Text '
         "(.txt/.md/.json/.csv) and images (.png/.jpg) work.")
+
+
+def save_upload(filename: str, data: bytes) -> dict:
+    """Keep the uploaded file so the chat and the agent console can display
+    it later. Returns {"url", "name", "kind"}; url is served from /uploads."""
+    safe_name = (Path(filename or "").name or "attachment")
+    ext = Path(safe_name).suffix.lower()
+    config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    stored = f"{uuid.uuid4().hex[:12]}-{safe_name}"
+    (config.UPLOAD_DIR / stored).write_bytes(data)
+    kind = "image" if ext in IMAGE_EXTS else "file"
+    return {"url": f"/uploads/{stored}", "name": safe_name, "kind": kind}

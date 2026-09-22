@@ -32,6 +32,8 @@ app.include_router(agent_router)
 # FastAPI serves the browser UI and API from one Python service.
 STATIC_DIR = config.REPO_ROOT / "app" / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(config.UPLOAD_DIR)), name="uploads")
 
 
 @app.get("/", include_in_schema=False)
@@ -124,6 +126,7 @@ async def chat(session_id: str = Form(...),
 
     # Read the attachment first: its text becomes part of the question.
     attachment_text, attachment_note = "", None
+    attachment_meta = None
     if file is not None and file.filename:
         data = await file.read()
         if len(data) > config.MAX_UPLOAD_MB * 1024 * 1024:
@@ -134,13 +137,18 @@ async def chat(session_id: str = Form(...),
                 file.filename, data)
         except attachment_service.UnsupportedFileError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        # Keep the file itself so both chats can show the image, not the OCR.
+        saved = attachment_service.save_upload(file.filename, data)
+        attachment_meta = {**saved, "note": attachment_note,
+                           "ocr": attachment_text}
 
     if not message.strip() and not attachment_text:
         raise HTTPException(
             status_code=400,
             detail="Send a message, or attach a file with readable text in it.")
 
-    result = pipeline.run_pipeline(session_id, message, attachment_text)
+    result = pipeline.run_pipeline(session_id, message, attachment_text,
+                                   attachment=attachment_meta)
     return {**result, "attachment_note": attachment_note}
 
 
@@ -164,10 +172,26 @@ def conversation_transcript(session_id: str):
         if msg.get("kind"):
             entry["kind"] = msg["kind"]
         marker = "\n\nAttachment text (OCR):"
-        if msg["role"] == "customer" and marker in msg["text"]:
+        attachment = msg.get("attachment")
+        if msg["role"] == "customer" and attachment:
+            # The customer gets the file itself plus one small note line.
+            # The raw OCR text stays server-side (the agent console shows
+            # it to the human); it must never render as a chat bubble.
+            entry["text"] = (msg["text"]
+                             or f"(attached {attachment.get('name', 'file')})")
+            entry["attachment"] = {
+                key: attachment[key]
+                for key in ("url", "name", "kind", "note")
+                if attachment.get(key)}
+        elif msg["role"] == "customer" and marker in msg["text"]:
+            # Legacy sessions stored the OCR inline. Show only a one-line
+            # summary - the file itself was never saved for these.
             text, ocr = msg["text"].split(marker, 1)
-            entry = {"role": "customer", "text": text.strip(),
-                     "attachment_note": f"Attachment text (OCR):{ocr}".strip()}
+            ocr_lines = len([ln for ln in ocr.strip().splitlines() if ln.strip()])
+            entry = {"role": "customer", "text": text.strip() or "(attachment)",
+                     "attachment_note": (f"Read {ocr_lines} line"
+                                         f"{'s' if ocr_lines != 1 else ''} "
+                                         "from an attachment via OCR.")}
         rendered.append(entry)
     replies = handoff_store.replies_after(session_id, 0)
     return {"messages": rendered,

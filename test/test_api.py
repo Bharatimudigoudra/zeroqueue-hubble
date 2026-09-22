@@ -418,7 +418,7 @@ def test_transcript_restores_full_history_with_kinds(client, tmp_path, monkeypat
     assert empty == {"messages": [], "last_human_reply_id": 0}
 
 
-def test_transcript_splits_ocr_into_attachment_note(client):
+def test_transcript_returns_attachment_file_and_note_never_ocr(client):
     from app.services import pipeline
 
     pipeline.reset_all()
@@ -431,8 +431,32 @@ def test_transcript_splits_ocr_into_attachment_note(client):
                                 "text/plain")})
     body = client.get("/api/transcript/ocr-restore").json()
     stored = next(m for m in body["messages"] if m["role"] == "customer")
+    assert stored["text"] == "check this"
     assert "Attachment text (OCR)" not in stored["text"]
-    assert "VOUCHER CODE IS INVALID" in stored["attachment_note"]
+    assert stored["attachment"]["name"] == "voucher.txt"
+    assert stored["attachment"]["url"].startswith("/uploads/")
+    assert stored["attachment"]["url"].endswith("-voucher.txt")
+    assert stored["attachment"]["note"].startswith("Read 1 line from voucher.txt")
+    assert "ocr" not in stored["attachment"]
+    assert "attachment_note" not in stored
+    assert "VOUCHER CODE IS INVALID" not in str(body["messages"])
+
+
+def test_transcript_legacy_inline_ocr_restores_as_small_note(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    # Sessions stored before attachments were saved carry the OCR inline.
+    # Restore must show a one-line summary, never the raw OCR dump.
+    sess = pipeline._session("legacy-ocr")
+    sess["messages"].append({
+        "role": "customer",
+        "text": "check this\n\nAttachment text (OCR):\nVOUCHER CODE IS INVALID\nSECOND LINE"})
+    body = client.get("/api/transcript/legacy-ocr").json()
+    stored = body["messages"][0]
+    assert stored["text"] == "check this"
+    assert stored["attachment_note"] == "Read 2 lines from an attachment via OCR."
+    assert "VOUCHER CODE IS INVALID" not in str(body["messages"])
 
 
 def test_reset_button_clears_paused_state_and_history(client, tmp_path, monkeypatch):
@@ -514,3 +538,34 @@ def test_answers_are_plain_sentences_without_echoed_questions(client):
     assert "Pine Labs" not in body["answer"]
     assert "?" not in body["answer"]
     assert not body["answer"].lstrip().startswith(("1.", "-"))
+
+
+def test_agent_console_shows_attachment_with_ocr(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    client.post("/api/handoff", json={"session_id": "console-attach"})
+    client.post("/api/chat",
+                data={"session_id": "console-attach", "message": "check this"},
+                files={"file": ("voucher.txt", b"VOUCHER CODE IS INVALID",
+                                "text/plain")})
+    body = client.get("/api/agent/conversations/console-attach").json()
+    stored = next(m for m in body["messages"] if m["role"] == "customer")
+    assert stored["text"] == "check this"
+    assert stored["attachment"]["url"].startswith("/uploads/")
+    assert "VOUCHER CODE IS INVALID" in stored["attachment"]["ocr"]
+
+
+def test_agent_console_splits_legacy_inline_ocr(client):
+    from app.services import pipeline
+
+    pipeline.reset_all()
+    sess = pipeline._session("console-legacy")
+    sess["status"] = "handoff"
+    sess["messages"].append({
+        "role": "customer",
+        "text": "check this\n\nAttachment text (OCR):\nVOUCHER CODE IS INVALID"})
+    body = client.get("/api/agent/conversations/console-legacy").json()
+    stored = body["messages"][0]
+    assert stored["text"] == "check this"
+    assert stored["attachment"]["ocr"] == "VOUCHER CODE IS INVALID"

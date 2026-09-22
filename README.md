@@ -1,6 +1,6 @@
 # ZeroQueue + Hubble KB - all Python
 
-> **Current integration status:** the Python UI, clarification flow, Moss SDK path, local retrieval fallback, and Intercom handoff code are included. Moss is waiting for the account-confirmation email before a real key/benchmark can be completed. Intercom requires Bharati's private local `.env` plus the ngrok/webhook setup below before the live workspace test. The ZIP contains placeholders only. See `docs\integration-status.md`.
+> **Current integration status:** everything is live. Moss retrieval is connected and serving real searches, and Intercom handoff is configured and working on the Render deployment. Local runs still work offline with `MOCK_MODE=true` and the local retrieval fallback. Keep real keys in your private `.env` only - never in GitHub, `.env.example`, or screenshots.
 
 ZeroQueue is now one Python service and one Docker image. FastAPI serves both the chat page and the existing Hubble gift-card API. The backend still loads 100 brands into 875 retrieval chunks and keeps the same retrieval, citations, confidence, attachment, and human-handoff flow.
 
@@ -14,7 +14,7 @@ Browser: http://localhost:8000
         +--> /api/chat and /api/handoff
                  |
                  +--> Hubble JSON: 100 brands -> 875 chunks
-                 +--> Moss-ready retrieval -> confidence -> cited answer or handoff
+                 +--> Moss retrieval -> confidence -> cited answer or handoff
                  +--> LLM wording when MOCK_MODE=false
 ```
 
@@ -23,10 +23,14 @@ The browser JavaScript sends the question to `/api/chat` on the same address. Th
 ## Files you should know
 
 - `app\main.py` - starts FastAPI, serves the page, and keeps all API routes.
+- `app\api_agent.py` - the agent console API (`/api/agent/...`).
+- `app\api_intercom.py` - verifies and receives the Intercom webhook.
 - `app\static\index.html` - the visible chat page structure.
 - `app\static\styles.css` - colors, spacing, message bubbles, mobile layout.
 - `app\static\app.js` - sends questions and attachments to FastAPI, then displays answers and Moss Trace.
+- `app\static\agent.html` + `app\static\agent.js` - the support agent console.
 - `app\services\` - the existing retrieval, answer, confidence, handoff, and attachment logic.
+- `app\services\handoff_store.py` - session mapping, event dedupe, and human replies in a small SQLite file.
 - `data\hubble-gift-cards-top100.json` - the 100-brand knowledge base.
 - `requirements.txt` - complete minimal Python dependencies.
 - `docker-compose.yml` - starts only the one Python service.
@@ -68,13 +72,22 @@ uvicorn app.main:app --reload --port 8000
 
 Then open `http://localhost:8000`.
 
+## Deployment on Render
+
+The live demo runs on Render's free tier as one Docker container. Render watches the GitHub repo: every `git push` to `main` rebuilds and redeploys automatically, so there is nothing to click. After a deploy, check `https://zeroqueue-hubble.onrender.com/health` - `status` and `database` must be `ok`, and `retrieval.provider` must be `moss`. The Intercom webhook on the live deployment points at `https://zeroqueue-hubble.onrender.com/api/webhooks/intercom`; the ngrok steps below are only for local testing.
+
 ## Environment
 
 Copy `.env.example` to `.env` if your old `.env` is not already available locally. Keep `.env` private and never push it to GitHub.
 
 - `MOCK_MODE=true` - local grounded answers, no external API call.
-- `MOCK_MODE=false` - the LLM writes the final wording using `LLM_API_KEY` (old `GROQ_API_KEY` still works).
-- `MOSS_API_KEY` and `MOSS_INDEX_NAME` - reserved for the real Moss integration seam.
+- `MOCK_MODE=false` - the LLM writes the final wording. The app talks to any OpenAI-compatible chat endpoint:
+  - `LLM_API_KEY` - the key for that endpoint (old `GROQ_API_KEY` still works).
+  - `LLM_MODEL` - the model name to send.
+  - `LLM_BASE_URL` - the endpoint base. For your own free Groq key: `LLM_BASE_URL=https://api.groq.com/openai/v1`.
+- `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `MOSS_INDEX_NAME` - the live Moss index (see the Moss section).
+- `AGENT_CONSOLE_KEY` - optional password for the agent console. Set it before sharing a deployed URL.
+- `INTERCOM_ACCESS_TOKEN`, `INTERCOM_WEBHOOK_SECRET`, `INTERCOM_ADMIN_ID`, `INTERCOM_TEAM_ID` - the live handoff inbox.
 
 ## Test
 
@@ -84,17 +97,19 @@ python -m pip install -r requirements.txt
 pytest test -q
 ```
 
+64 tests cover the API, retrieval, clarification, attachments, handoff, and the console.
+
 With the app running, ask: `How do I redeem an Amazon gift card?` The answer should include sources, and Moss Trace should show retrieval time, confidence, and the sources used.
 
 ## One-line explanation for the demo
 
-"FastAPI serves the HTML, CSS, and JavaScript frontend as static files, and that JavaScript calls the chat routes in the same Python app. The existing retrieval and answer pipeline stays unchanged, so one container now runs the complete product."
+"One FastAPI service serves the chat page, the agent console, and the API. Customer questions go through Moss retrieval over 100 brands, answers come back cited with a confidence score, and anything the knowledge base cannot answer goes honestly to a human through Intercom - one container runs the complete product."
 
 ## Real Moss retrieval
 
 The app uses the official Python `moss` SDK. At startup it turns the existing Hubble chunks into Moss documents, creates or updates `hubble-gift-cards`, and loads that index into memory. Each question then uses Moss hybrid search with `alpha=0.6`. The result is converted back to the existing `Chunk` shape, so the answer, citation, confidence, handoff, API, and UI code do not change.
 
-If Moss credentials are absent or startup fails, the app logs the reason and uses the previous local keyword scorer. Check `http://localhost:8000/health`: `retrieval.provider` must be `moss` for a real Moss demo. `local_fallback` means the demo is working but Moss is not active.
+Moss is connected and live on the deployment. If credentials are absent or startup fails, the app logs the reason and uses the previous local keyword scorer so the product never breaks. Check `/health`: `retrieval.provider` must be `moss` for a real Moss demo. `local_fallback` means the demo is working but Moss is not active.
 
 Required `.env` values:
 
@@ -114,13 +129,26 @@ python scripts\benchmark_retrieval.py
 
 It compares 15 questions against Moss and the previous scorer, calculates p50/p95, writes `docs\latency.md`, and refuses to publish local-fallback timings as Moss timings.
 
+## Answer quality rules
+
+- A customer can attach a voucher or error screenshot. Free local Tesseract OCR reads it, and if it finds a real error value (for example `VOUCHER CODE IS INVALID`) the answer quotes that exact error and skips labels. The chat shows the image itself plus one small note line such as "Read 7 words from voucher.png via OCR." - the raw OCR text never appears as a chat bubble.
+- Retrieved passages must actually cover the question's terms. When they do not, the app says it does not have that entry and hands off to a human instead of quoting a mismatched FAQ.
+- Answers are plain sentences. Numbered steps appear only for real sequences such as redeem instructions.
+- When the knowledge base has no entry, the app says so honestly and hands off - it never invents an answer.
+
 ## Clarifying unclear support issues
 
 For a message such as `My voucher is not working`, the pipeline does not retrieve a generic answer. It first asks which brand the voucher is for and what exact error is visible. The next customer message is joined to the original issue, then the normal Moss retrieval, citation, confidence, and handoff flow runs. This rule is in `app\services\clarification.py`; it is deterministic, easy to explain, and uses no extra model call. Answers stay friendly and professional without emojis.
 
+The brand pins to the conversation once detected, so follow-ups like "and how long is it valid?" stay inside the right brand's documents. If the customer explicitly names a different brand ("no, Amazon"), retrieval re-pins to that brand on the spot.
+
+## Conversation state: refresh and reset
+
+A browser refresh restores the full conversation - customer messages with their images, AI answers, the pause notice, and human replies - through `GET /api/transcript/{session_id}`. The reset button calls `POST /api/reset`, which wipes the conversation server-side (transcript, paused state, human replies, Intercom link) and returns the chat to a fresh AI session.
+
 ## Real Intercom human handoff
 
-The built-in chat creates a real Intercom conversation only when a handoff is needed. It sends the recent transcript, adds an internal note with confidence, handoff reason, and sources already checked, then assigns the conversation to the Support team. The AI pauses for that browser session. Human admin replies arriving through the signed Intercom webhook are stored and shown back in the same browser chat by a small five-second poll.
+The built-in chat creates a real Intercom conversation only when a handoff is needed. It sends the recent transcript, adds an internal note with confidence, handoff reason, and sources already checked, then assigns the conversation to the Support team. The AI pauses for that browser session; the pause notice appears once, and later customer messages go straight to the human without repeating the banner. Human admin replies arriving through the signed Intercom webhook are stored and shown back in the same browser chat by a small five-second poll.
 
 If Intercom is not configured or its API rejects the handoff, the UI does not claim success. It says the AI is paused and the conversation is only marked for review.
 
@@ -128,7 +156,9 @@ The customer endpoint also answers on its work-plan alias `POST /api/agent/chat`
 
 ## Agent console (/agent)
 
-Open `/agent` on the same server for the support-agent side. The console lists every escalated conversation with its handoff reason, shows the full transcript, and generates the AI's suggested answer for the latest customer message - editable before anything is sent. "Approve & send" posts the reply to the linked Intercom conversation as an admin comment, so it lands in the customer's chat like any human reply (and appears there immediately, with webhook dedupe preventing a double bubble). "Internal note" posts an Intercom note the customer never sees. If a conversation predates the Intercom link, the console runs the normal handoff creation first. The AI backend stays untouched: the console only reads pipeline state and calls the same services.
+Open `/agent` on the same server for the support-agent side. The console lists every escalated conversation with its handoff reason and shows the full transcript, including the customer's attachment - the image itself with the OCR text noted under it, so the agent sees exactly what the customer sent. It also generates the AI's suggested answer for the latest customer message, editable before anything is sent. "Approve & send" posts the reply to the linked Intercom conversation as an admin comment, so it lands in the customer's chat like any human reply (and appears there immediately, with webhook dedupe preventing a double bubble). Console replies are plain text. If a conversation predates the Intercom link, the console runs the normal handoff creation first. The AI backend stays untouched: the console only reads pipeline state and calls the same services.
+
+The console refreshes itself every five seconds: new escalations and new customer messages appear on their own, and a half-written agent reply is never touched.
 
 The console API is open by default for the local demo. Set `AGENT_CONSOLE_KEY` in `.env` before sharing a deployed URL; the page then asks for the key once and remembers it in the browser.
 
@@ -143,7 +173,9 @@ INTERCOM_TEAM_ID=11621027
 
 Do not put the token or webhook secret in `.env.example`, GitHub, chat, screenshots, or the ZIP. The ZIP contains placeholders only.
 
-### Demo setup with ngrok
+### Local webhook testing with ngrok
+
+The live deployment already receives webhooks on its Render URL. For local testing:
 
 1. Start the one Python app: `docker compose up --build`.
 2. In a second terminal run: `ngrok http 8000`.

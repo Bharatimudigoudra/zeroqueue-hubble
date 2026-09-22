@@ -31,3 +31,9 @@ def client():
     from app.main import app
     with TestClient(app) as c:
         yield c
+
+@pytest.fixture(autouse=True)
+def _tmp_upload_dir(tmp_path, monkeypatch):
+    """Keep test uploads out of the repo's real uploads/ folder."""
+    from app import config
+    monkeypatch.setattr(config, "UPLOAD_DIR", tmp_path / "uploads")

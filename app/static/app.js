@@ -205,7 +205,7 @@ async function sendMessage(retry = null) {
     if (!response.ok) throw new Error(body.detail || "Request failed");
     typing.remove();
     if (body.answer) addMessage("bot", body.answer, null, body.status === "clarifying");
-    if (body.attachment_note) addMessage("system", `Attachment: ${body.attachment_note}`);
+    if (body.attachment_note) addMessage("system", body.attachment_note);
     updateTrace(body.trace);
   } catch (error) {
     typing.remove();
@@ -298,12 +298,15 @@ async function restoreTranscript() {
     if (!response.ok) return;
     const body = await response.json();
     (body.messages || []).forEach((msg) => {
-      if (msg.role === "customer") addMessage("customer", msg.text);
+      const attachmentImage = msg.attachment && msg.attachment.kind === "image" ? msg.attachment.url : null;
+      if (msg.role === "customer") addMessage("customer", msg.text, attachmentImage);
       else if (msg.role === "human") addMessage("human", msg.text);
       else if (msg.role === "assistant") {
         addMessage("bot", msg.text, null, msg.kind === "clarifying");
       }
-      if (msg.attachment_note) addMessage("system", `Attachment: ${msg.attachment_note}`);
+      // One small note line only - raw OCR text never renders as a bubble.
+      const note = (msg.attachment && msg.attachment.note) || msg.attachment_note;
+      if (msg.role === "customer" && note) addMessage("system", note);
     });
     lastHumanReplyId = body.last_human_reply_id || 0;
     // The trace panel is per-request state on the server; restore it too so

@@ -71,7 +71,8 @@ def _record_trace(sess: dict, retrieval_ms: float, total_start: float,
     }
 
 
-def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> dict:
+def run_pipeline(session_id: str, message: str, attachment_text: str = "",
+                  attachment: Optional[dict] = None) -> dict:
     total_start = time.perf_counter()
     sess = _session(session_id)
 
@@ -84,8 +85,14 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
         if attachment_text.strip():
             forwarded_text = (f"{forwarded_text}\n\nAttachment text (OCR):\n"
                               f"{attachment_text.strip()}").strip()
-        if forwarded_text:
-            sess["messages"].append({"role": "customer", "text": forwarded_text})
+        if forwarded_text or attachment:
+            entry = {"role": "customer", "text": incoming}
+            if attachment:
+                entry["attachment"] = attachment
+            sess["messages"].append(entry)
+            if not forwarded_text:
+                forwarded_text = (f"(customer sent an attachment: "
+                                  f"{attachment.get('name', 'file')})")
             handoff = intercom_handoff.send(
                 session_id, forwarded_text,
                 sess["trace"].get("handoff_reason") or "human_follow_up",
@@ -103,8 +110,11 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
 
     # Store the current customer message before clarification or retrieval.
     # A handoff is decided later from an explicit human request or weak evidence.
-    if incoming:
-        sess["messages"].append({"role": "customer", "text": incoming})
+    if incoming or attachment:
+        entry = {"role": "customer", "text": incoming}
+        if attachment:
+            entry["attachment"] = attachment
+        sess["messages"].append(entry)
 
     # Ask for missing details without repeating facts already supplied. OCR is
     # part of the customer's current context, so it must inform clarification

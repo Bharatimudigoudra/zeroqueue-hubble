@@ -85,7 +85,7 @@
     }
   }
 
-  function bubble(role, text) {
+  function bubble(role, text, attachment) {
     const row = document.createElement('div');
     const kind = role === 'customer' ? 'customer' : (role === 'agent' ? 'human' : 'bot');
     row.className = 'message-row ' + kind;
@@ -101,6 +101,30 @@
       msg.appendChild(label);
     }
     msg.appendChild(document.createTextNode(text));
+    // The agent must see what the customer actually sent: the image itself
+    // (or a file link), with the OCR text as a small note under it.
+    if (attachment) {
+      if (attachment.kind === 'image' && attachment.url) {
+        const img = document.createElement('img');
+        img.className = 'message-image';
+        img.alt = attachment.name || 'Customer attachment';
+        img.src = attachment.url;
+        msg.appendChild(img);
+      } else if (attachment.url) {
+        const link = document.createElement('a');
+        link.href = attachment.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = attachment.name || 'Download attachment';
+        msg.appendChild(link);
+      }
+      if (attachment.ocr) {
+        const ocr = document.createElement('div');
+        ocr.className = 'message-ocr';
+        ocr.textContent = 'OCR: ' + attachment.ocr;
+        msg.appendChild(ocr);
+      }
+    }
     if (kind === 'customer') { row.appendChild(msg); } else { row.appendChild(avatar); row.appendChild(msg); }
     return row;
   }
@@ -120,7 +144,7 @@
     detailMeta.textContent = meta;
 
     transcriptEl.innerHTML = '';
-    (data.messages || []).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text)); });
+    (data.messages || []).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text, m.attachment)); });
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
     renderedServerMessages = (data.messages || []).length;
 
@@ -179,7 +203,7 @@
       const data = await (await api('/api/agent/conversations/' + encodeURIComponent(selectedSession))).json();
       const messages = data.messages || [];
       if (messages.length > renderedServerMessages) {
-        messages.slice(renderedServerMessages).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text)); });
+        messages.slice(renderedServerMessages).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text, m.attachment)); });
         renderedServerMessages = messages.length;
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
       }
