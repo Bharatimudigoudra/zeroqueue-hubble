@@ -19,7 +19,7 @@ The problem is not the absence of information. The problem is access - the custo
 
 Support work comes in two types. Information resolution - the business already knows the answer ("How do I redeem?", "Is this valid online?") - should be automated. Exception resolution - errors, failed vouchers, anything needing judgment - should reach a human quickly.
 
----
+"Our philosophy: automate information, escalate exceptions."
 
 ZeroQueue is an AI support copilot for gift-card help desks. A customer asks a question in plain language or uploads a voucher screenshot, and the app answers only from a grounded knowledge base - 100 brands, 875 retrieval chunks - with citations and a live confidence score. When the knowledge base has no real answer, it says so and hands the chat to a human through Intercom instead of guessing.
 
