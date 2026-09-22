@@ -101,8 +101,9 @@
       msg.appendChild(label);
     }
     msg.appendChild(document.createTextNode(text));
-    // The agent must see what the customer actually sent: the image itself
-    // (or a file link), with the OCR text as a small note under it.
+    // The agent sees exactly what the customer sent: the question text plus
+    // the image itself (or a file link). OCR text is for the AI only - it is
+    // never displayed on this page.
     if (attachment) {
       if (attachment.kind === 'image' && attachment.url) {
         const img = document.createElement('img');
@@ -117,12 +118,6 @@
         link.rel = 'noopener';
         link.textContent = attachment.name || 'Download attachment';
         msg.appendChild(link);
-      }
-      if (attachment.ocr) {
-        const ocr = document.createElement('div');
-        ocr.className = 'message-ocr';
-        ocr.textContent = 'OCR: ' + attachment.ocr;
-        msg.appendChild(ocr);
       }
     }
     if (kind === 'customer') { row.appendChild(msg); } else { row.appendChild(avatar); row.appendChild(msg); }
