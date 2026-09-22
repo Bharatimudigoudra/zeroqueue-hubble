@@ -1,226 +1,170 @@
-# ZeroQueue + Hubble KB - all Python
+# ZeroQueue + Hubble KB
 
-> **Current integration status:** everything is live. Moss retrieval is connected and serving real searches, and Intercom handoff is configured and working on the Render deployment. Local runs still work offline with `MOCK_MODE=true` and the local retrieval fallback. Keep real keys in your private `.env` only - never in GitHub, `.env.example`, or screenshots.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-one%20service-deepgreen.svg)](https://fastapi.tiangolo.com/)
+[![Retrieval](https://img.shields.io/badge/Retrieval-Moss%20hybrid-deepgreen.svg)](https://github.com/usemoss/moss)
+[![Tests](https://img.shields.io/badge/Tests-64%20passing-brightgreen.svg)](test/)
+[![Docker](https://img.shields.io/badge/Docker-one%20container-blue.svg)](Dockerfile)
+[![Deploy](https://img.shields.io/badge/Deploy-Render%20free%20tier-purple.svg)](https://zeroqueue-hubble.onrender.com)
 
-ZeroQueue is now one Python service and one Docker image. FastAPI serves both the chat page and the existing Hubble gift-card API. The backend still loads 100 brands into 875 retrieval chunks and keeps the same retrieval, citations, confidence, attachment, and human-handoff flow.
+[Live demo](https://zeroqueue-hubble.onrender.com) · [Agent console](https://zeroqueue-hubble.onrender.com/agent) · [API contract](docs/api-contract.md) · [Health check](https://zeroqueue-hubble.onrender.com/health)
 
-## Simple architecture
+---
 
-```text
-Browser: http://localhost:8000
-        |
-        | same FastAPI service
-        +--> HTML + CSS + JavaScript chat screen
-        +--> /api/chat and /api/handoff
-                 |
-                 +--> Hubble JSON: 100 brands -> 875 chunks
-                 +--> Moss retrieval -> confidence -> cited answer or handoff
-                 +--> LLM wording when MOCK_MODE=false
+ZeroQueue is an AI support copilot for gift-card help desks. A customer asks a question in plain language or uploads a voucher screenshot, and the app answers only from a grounded knowledge base - 100 brands, 875 retrieval chunks - with citations and a live confidence score. When the knowledge base has no real answer, it says so and hands the chat to a human through Intercom instead of guessing.
+
+A confident wrong answer is the biggest risk in support automation, and gift cards sit next to real money. ZeroQueue's rule: the customer gets a cited correct answer or a human - never a hallucination. Retrieval, answers, handoff, and the agent console all run in one FastAPI service, so a single Docker container is the whole product.
+
+## Quickstart
+
+**Before you start:** Docker Desktop, or Python 3.10+ with a conda/venv environment. Copy `.env.example` to `.env` first - the demo works offline with `MOCK_MODE=true`, no keys needed.
+
+### Docker (one container, the whole product)
+
+```bash
+docker compose up --build
 ```
 
-The browser JavaScript sends the question to `/api/chat` on the same address. There is no Node.js, Next.js, npm, frontend build step, or second container.
+Open `http://localhost:8000`. Ask: `How do I redeem an Amazon gift card?`
 
-## Files you should know
+### Plain Python
 
-- `app\main.py` - starts FastAPI, serves the page, and keeps all API routes.
-- `app\api_agent.py` - the agent console API (`/api/agent/...`).
-- `app\api_intercom.py` - verifies and receives the Intercom webhook.
-- `app\static\index.html` - the visible chat page structure.
-- `app\static\styles.css` - colors, spacing, message bubbles, mobile layout.
-- `app\static\app.js` - sends questions and attachments to FastAPI, then displays answers and Moss Trace.
-- `app\static\agent.html` + `app\static\agent.js` - the support agent console.
-- `app\services\` - the existing retrieval, answer, confidence, handoff, and attachment logic.
-- `app\services\handoff_store.py` - session mapping, event dedupe, and human replies in a small SQLite file.
-- `data\hubble-gift-cards-top100.json` - the 100-brand knowledge base.
-- `requirements.txt` - complete minimal Python dependencies.
-- `docker-compose.yml` - starts only the one Python service.
-
-## Run on Windows with Docker Desktop
-
-1. If your old folder has a `.env`, copy that file somewhere safe first.
-2. Delete the old `zeroqueue-hubble` folder.
-3. Extract this ZIP in `E:\Hackathons`, creating one fresh `E:\Hackathons\zeroqueue-hubble` folder. Do not paste it over the old Next.js copy.
-4. Copy your saved `.env` into the fresh `zeroqueue-hubble` folder. If you do not have one, copy `.env.example` and rename the copy to `.env`.
-
-Open Docker Desktop and wait until it says the engine is running. Open Anaconda Prompt in the extracted `zeroqueue-hubble` folder, then run:
-
-```powershell
-conda activate GenAI
-```
-
-```powershell
-docker compose down
-
-docker compose build --no-cache
-
-docker compose up
-```
-
-Open `http://localhost:8000`. Stop with `Ctrl+C`.
-
-Docker installs the Python packages from `requirements.txt`; conda does not need to install them for the Docker run.
-
-## Run directly with Python instead of Docker
-
-From the project folder:
-
-```powershell
-conda activate GenAI
-python -m pip install -r requirements.txt
+```bash
+pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Then open `http://localhost:8000`.
+### Try the demo flow
 
-## Deployment on Render
+1. Ask `How do I redeem an Amazon gift card?` - cited answer, Moss Trace shows retrieval time and confidence.
+2. Attach a voucher screenshot - OCR reads the real error, the answer quotes it.
+3. Ask something the KB does not cover - honest "no entry" answer, one-click handoff to a human.
+4. Open `/agent` - the escalated chat is there with the transcript and the customer's image. Reply, and it lands back in the customer's chat.
 
-The live demo runs on Render's free tier as one Docker container. Render watches the GitHub repo: every `git push` to `main` rebuilds and redeploys automatically, so there is nothing to click. After a deploy, check `https://zeroqueue-hubble.onrender.com/health` - `status` and `database` must be `ok`, and `retrieval.provider` must be `moss`. The Intercom webhook on the live deployment points at `https://zeroqueue-hubble.onrender.com/api/webhooks/intercom`; the ngrok steps below are only for local testing.
+## Why ZeroQueue?
 
-## Environment
+**Most support bots retrieve the nearest chunk and let the LLM smooth over the gap. "Nearest" is often the wrong brand, the wrong error, the wrong answer.**
 
-Copy `.env.example` to `.env` if your old `.env` is not already available locally. Keep `.env` private and never push it to GitHub.
+ZeroQueue gates every answer on relevance: retrieved passages must actually cover the question's terms, or the app hands off honestly. Unclear issues get a clarifying question first, and the brand pins to the conversation so follow-ups stay scoped. The result is a support bot a payments-adjacent product can trust in front of customers.
 
-- `MOCK_MODE=true` - local grounded answers, no external API call.
-- `MOCK_MODE=false` - the LLM writes the final wording. The app talks to any OpenAI-compatible chat endpoint:
-  - `LLM_API_KEY` - the key for that endpoint (old `GROQ_API_KEY` still works).
-  - `LLM_MODEL` - the model name to send.
-  - `LLM_BASE_URL` - the endpoint base. For your own free Groq key: `LLM_BASE_URL=https://api.groq.com/openai/v1`.
-- `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `MOSS_INDEX_NAME` - the live Moss index (see the Moss section).
-- `AGENT_CONSOLE_KEY` - optional password for the agent console. Set it before sharing a deployed URL.
-- `INTERCOM_ACCESS_TOKEN`, `INTERCOM_WEBHOOK_SECRET`, `INTERCOM_ADMIN_ID`, `INTERCOM_TEAM_ID` - the live handoff inbox.
+### Measured in the product (Moss Trace panel, live deployment)
 
-## Test
+| Signal | Value |
+|--------|-------|
+| Retrieval latency | 0.5 - 3 ms per question |
+| Full answer (retrieval + grounded wording) | about 1 second |
+| Knowledge base | 100 brands, 875 chunks |
+| Wrong-topic answers after the relevance gate | 0 (handoff instead) |
 
-```powershell
-conda activate GenAI
-python -m pip install -r requirements.txt
+## Features
+
+- **Grounded answers with citations** - every answer quotes real KB passages; sources and confidence shown live in the Moss Trace panel
+- **Moss hybrid retrieval** - the official Python SDK, hybrid search with `alpha=0.6` over the `hubble-gift-cards` index, loaded once at startup ([`usemoss/moss`](https://github.com/usemoss/moss))
+- **Relevance gate** - passages must cover the question's terms or the app hands off instead of quoting a mismatched FAQ
+- **Screenshot OCR answers** - free local Tesseract reads error screenshots; the answer quotes the exact error value (like `VOUCHER CODE IS INVALID`) and skips labels
+- **Clarifying questions with brand pin** - vague issues get one targeted question; the brand sticks to the conversation and re-pins instantly when the customer corrects it
+- **Honest human handoff via Intercom** - real conversation with transcript and evidence note; the AI pauses for that chat only, and the pause notice shows once
+- **Agent console at `/agent`** - escalated chats with full transcript and the customer's actual image; one-click reply lands back in the customer's chat; auto-refreshes every 5 seconds without touching a half-written reply
+- **Clean attachment display** - the customer chat shows the image itself plus one small note line, never a wall of OCR text
+- **Plain-sentence answers** - no fake numbering; numbered steps only for real sequences like redeem instructions
+- **Fresh-session refresh** - a page refresh always starts a clean AI chat; the reset button wipes the conversation server-side on demand
+- **Local-first fallback** - if Moss or LLM credentials fail, the app logs it and keeps answering with the local scorer; the product never breaks mid-demo
+- **One-container deploy** - FastAPI serves frontend, retrieval, handoff, and console; Render free tier auto-deploys on `git push` to `main`
+
+## Architecture
+
+```text
+Browser (chat UI + agent console)
+        |
+        | same FastAPI service
+        +--> HTML + CSS + JavaScript (no build step, no Node.js)
+        +--> /api/chat  /api/handoff  /api/agent/*  /api/webhooks/intercom
+                 |
+                 +--> Hubble JSON: 100 brands -> 875 chunks
+                 +--> Moss hybrid retrieval -> relevance gate
+                 +--> confidence -> cited answer  |  honest handoff -> Intercom
+                 +--> LLM wording (any OpenAI-compatible endpoint) when MOCK_MODE=false
+```
+
+## Project structure
+
+```text
+app/
+├── main.py                  # FastAPI app: page serving + all API routes
+├── api_agent.py             # Agent console API (/api/agent/...)
+├── api_intercom.py          # Signed Intercom webhook receiver
+├── config.py                # All environment configuration
+├── adapters/
+│   └── intercom.py          # Intercom API calls
+├── services/
+│   ├── pipeline.py          # Orchestration: clarify -> retrieve -> answer/handoff
+│   ├── moss_service.py      # Moss index build + hybrid search + local fallback
+│   ├── answer_service.py    # Grounded answers, relevance gate, citations, LLM call
+│   ├── clarification.py     # Brand/error clarification, typo tolerance
+│   ├── confidence.py        # Confidence bands from retrieval scores
+│   ├── attachment_service.py# OCR (Tesseract) + upload storage
+│   ├── escalation.py        # Handoff decisions
+│   ├── intercom_handoff.py  # Create + assign Intercom conversations
+│   ├── agent_console.py     # Console reads, suggested replies, approve-send
+│   └── handoff_store.py     # Session mapping, dedupe, human replies (SQLite)
+├── static/
+│   ├── index.html           # Customer chat page
+│   ├── app.js               # Chat logic + Moss Trace panel
+│   ├── agent.html + agent.js# Agent console
+│   └── styles.css           # Shared styling
+data/
+└── hubble-gift-cards-top100.json   # The 100-brand knowledge base
+test/                        # 64 tests: API, retrieval, clarification, handoff, console
+scripts/                     # Backend runner + retrieval benchmark
+docs/                        # API contract, integration status, latency notes
+Dockerfile + docker-compose.yml     # The whole product in one container
+```
+
+## Configuration
+
+Copy `.env.example` to `.env`. Keep `.env` private - never push it, never put real keys in `.env.example`, GitHub, or screenshots.
+
+| Variable | What it does |
+|----------|--------------|
+| `MOCK_MODE` | `true` = offline grounded answers; `false` = LLM writes the final wording |
+| `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | Any OpenAI-compatible chat endpoint. For a free Groq key: `LLM_BASE_URL=https://api.groq.com/openai/v1` |
+| `MOSS_PROJECT_ID` / `MOSS_PROJECT_KEY` / `MOSS_INDEX_NAME` | The live Moss index (`hubble-gift-cards`) |
+| `INTERCOM_ACCESS_TOKEN` / `INTERCOM_WEBHOOK_SECRET` / `INTERCOM_ADMIN_ID` / `INTERCOM_TEAM_ID` | The live human-handoff inbox |
+| `AGENT_CONSOLE_KEY` | Optional password for `/agent` - set it before sharing a deployed URL |
+
+## API
+
+| Route | Purpose |
+|-------|---------|
+| `POST /api/chat` | One customer message (+ optional file) - returns answer, status, citations, trace |
+| `POST /api/agent/chat` | Alias of `/api/chat` for external frontends |
+| `POST /api/handoff` | Explicit "talk to a human" |
+| `POST /api/reset` | Wipe a conversation server-side (fresh AI chat) |
+| `GET /api/transcript/{session_id}` | Read a stored conversation |
+| `GET /api/human-replies/{session_id}` | Poll human replies for a paused chat |
+| `GET /api/trace/{session_id}` | The Moss Trace data behind the panel |
+| `GET /health` | Service, database, KB, retrieval, and Intercom status |
+| `GET /agent` + `/api/agent/*` | The agent console and its API |
+| `POST /api/webhooks/intercom` | Signed webhook: human replies reach the customer's chat |
+
+The full request/response contract lives in [`docs/api-contract.md`](docs/api-contract.md).
+
+## Testing
+
+```bash
 pytest test -q
 ```
 
-64 tests cover the API, retrieval, clarification, attachments, handoff, and the console.
+64 tests cover the chat API, retrieval, the relevance gate, clarification and brand re-pinning, attachments and OCR, handoff, the agent console, and webhook dedupe. CI runs them on every push.
 
-With the app running, ask: `How do I redeem an Amazon gift card?` The answer should include sources, and Moss Trace should show retrieval time, confidence, and the sources used.
+## Deployment
 
-## One-line explanation for the demo
-
-"One FastAPI service serves the chat page, the agent console, and the API. Customer questions go through Moss retrieval over 100 brands, answers come back cited with a confidence score, and anything the knowledge base cannot answer goes honestly to a human through Intercom - one container runs the complete product."
-
-## Real Moss retrieval
-
-The app uses the official Python `moss` SDK. At startup it turns the existing Hubble chunks into Moss documents, creates or updates `hubble-gift-cards`, and loads that index into memory. Each question then uses Moss hybrid search with `alpha=0.6`. The result is converted back to the existing `Chunk` shape, so the answer, citation, confidence, handoff, API, and UI code do not change.
-
-Moss is connected and live on the deployment. If credentials are absent or startup fails, the app logs the reason and uses the previous local keyword scorer so the product never breaks. Check `/health`: `retrieval.provider` must be `moss` for a real Moss demo. `local_fallback` means the demo is working but Moss is not active.
-
-Required `.env` values:
-
-```text
-MOSS_PROJECT_ID=copy_from_moss_portal
-MOSS_PROJECT_KEY=copy_the_once_visible_key
-MOSS_INDEX_NAME=hubble-gift-cards
-```
-
-Never put the real Project Key in `.env.example`, GitHub, screenshots, or chat.
-
-After Moss is active, run the retrieval-only benchmark:
-
-```powershell
-python scripts\benchmark_retrieval.py
-```
-
-It compares 15 questions against Moss and the previous scorer, calculates p50/p95, writes `docs\latency.md`, and refuses to publish local-fallback timings as Moss timings.
-
-## Answer quality rules
-
-- A customer can attach a voucher or error screenshot. Free local Tesseract OCR reads it, and if it finds a real error value (for example `VOUCHER CODE IS INVALID`) the answer quotes that exact error and skips labels. The chat shows the image itself plus one small note line such as "Read 7 words from voucher.png via OCR." - the raw OCR text never appears as a chat bubble.
-- Retrieved passages must actually cover the question's terms. When they do not, the app says it does not have that entry and hands off to a human instead of quoting a mismatched FAQ.
-- Answers are plain sentences. Numbered steps appear only for real sequences such as redeem instructions.
-- When the knowledge base has no entry, the app says so honestly and hands off - it never invents an answer.
-
-## Clarifying unclear support issues
-
-For a message such as `My voucher is not working`, the pipeline does not retrieve a generic answer. It first asks which brand the voucher is for and what exact error is visible. The next customer message is joined to the original issue, then the normal Moss retrieval, citation, confidence, and handoff flow runs. This rule is in `app\services\clarification.py`; it is deterministic, easy to explain, and uses no extra model call. Answers stay friendly and professional without emojis.
-
-The brand pins to the conversation once detected, so follow-ups like "and how long is it valid?" stay inside the right brand's documents. If the customer explicitly names a different brand ("no, Amazon"), retrieval re-pins to that brand on the spot.
-
-## Conversation state: refresh and reset
-
-Every page load starts a completely fresh AI chat: the previous session is wiped server-side through `POST /api/reset` (transcript, paused state, human replies, Intercom link) and forgotten by the browser, so a refresh never brings back an old conversation or a paused human state. The round reset button does the same thing on demand, without a reload. `GET /api/transcript/{session_id}` remains available as an API for reading a stored conversation.
-
-## Real Intercom human handoff
-
-The built-in chat creates a real Intercom conversation only when a handoff is needed. It sends the recent transcript, adds an internal note with confidence, handoff reason, and sources already checked, then assigns the conversation to the Support team. The AI pauses for that browser session; the pause notice appears once, and later customer messages go straight to the human without repeating the banner. Human admin replies arriving through the signed Intercom webhook are stored and shown back in the same browser chat by a small five-second poll.
-
-If Intercom is not configured or its API rejects the handoff, the UI does not claim success. It says the AI is paused and the conversation is only marked for review.
-
-The customer endpoint also answers on its work-plan alias `POST /api/agent/chat`, and the full request/response contract for every route lives in `docs\api-contract.md`.
-
-## Agent console (/agent)
-
-Open `/agent` on the same server for the support-agent side. The console lists every escalated conversation with its handoff reason and shows the full transcript, including the customer's attachment - the image itself with the OCR text noted under it, so the agent sees exactly what the customer sent. It also generates the AI's suggested answer for the latest customer message, editable before anything is sent. "Approve & send" posts the reply to the linked Intercom conversation as an admin comment, so it lands in the customer's chat like any human reply (and appears there immediately, with webhook dedupe preventing a double bubble). Console replies are plain text. If a conversation predates the Intercom link, the console runs the normal handoff creation first. The AI backend stays untouched: the console only reads pipeline state and calls the same services.
-
-The console refreshes itself every five seconds: new escalations and new customer messages appear on their own, and a half-written agent reply is never touched.
-
-The console API is open by default for the local demo. Set `AGENT_CONSOLE_KEY` in `.env` before sharing a deployed URL; the page then asks for the key once and remembers it in the browser.
-
-Private `.env` values needed:
-
-```text
-INTERCOM_ACCESS_TOKEN=rotated_token_from_intercom
-INTERCOM_WEBHOOK_SECRET=secret_shown_for_the_webhook
-INTERCOM_ADMIN_ID=11610928
-INTERCOM_TEAM_ID=11621027
-```
-
-Do not put the token or webhook secret in `.env.example`, GitHub, chat, screenshots, or the ZIP. The ZIP contains placeholders only.
-
-### Local webhook testing with ngrok
-
-The live deployment already receives webhooks on its Render URL. For local testing:
-
-1. Start the one Python app: `docker compose up --build`.
-2. In a second terminal run: `ngrok http 8000`.
-3. Copy ngrok's HTTPS URL.
-4. In Intercom webhook settings use: `https://YOUR-NGROK-URL/api/webhooks/intercom`.
-5. Subscribe to customer/user conversation events and admin reply events. Copy the webhook signing secret into the private `.env`, then restart the app.
-6. Check `http://localhost:8000/health`. `intercom_configured` must be `true`.
-7. In the built-in chat, trigger handoff. Confirm a conversation appears in the Support inbox with the transcript and internal evidence note. Reply from Intercom and confirm the reply appears in the built-in chat.
-
-The code is split into easy pieces: `adapters/intercom.py` makes API calls, `services/intercom_handoff.py` creates and assigns handoffs, `api_intercom.py` verifies and receives webhooks, and `services/handoff_store.py` keeps session mapping, event dedupe, and human replies in a small SQLite file.
-
-### Brand typo handling during clarification
-
-The clarification step remembers partial answers. If a customer first gives only a brand, it acknowledges that brand and asks only for the missing error. Brand names are normalized and compared with Python's built-in text similarity, so a clear typo such as `amezon` maps to the canonical KB brand `Amazon shopping`. The rule is deterministic and has no extra model call.
+The live demo runs on Render's free tier as one Docker container. Render watches the GitHub repo - every `git push` to `main` rebuilds and redeploys automatically. After a deploy, check `/health`: `status` and `database` must be `ok`, and `retrieval.provider` must be `moss`. The Intercom webhook on the live deployment points at the Render URL; for local webhook testing, expose the local server with `ngrok http 8000` and use that URL instead.
 
 ## Adding more knowledge bases
 
-The app now loads every `.json` file inside `data\` at startup and merges all of their `brands` arrays into one retrieval index. The existing Hubble file stays where it is. To add another knowledge base:
+Drop another `.json` file with the same `{"brands": [...]}` shape into `data/` and restart (or rebuild the Docker image). Every brand file merges into one retrieval index; keep each `brand_key` unique. `POST /api/ingest` replaces the in-memory index until restart for a temporary live refresh. `/health` shows the new `kb_brands` and `kb_chunks` counts. A malformed file is reported at startup, never silently ignored.
 
-1. Create a new file such as `data\new-store-gift-cards.json`.
-2. Use the same top-level shape:
+## Built with
 
-```json
-{
-  "brands": [
-    {
-      "brand_name": "Example Brand",
-      "brand_key": "example-brand",
-      "source_url": "https://example.com/public-policy",
-      "validity": ["Valid for 12 months."],
-      "restrictions": ["Cannot be exchanged for cash."],
-      "how_to_redeem": [
-        {"mode": "online", "steps": ["Open checkout.", "Enter the voucher code."]}
-      ],
-      "faqs": []
-    }
-  ]
-}
-```
-
-3. Keep each `brand_key` unique across all files so document IDs do not collide.
-4. Direct Python run: stop the server and start `scripts\run_backend.bat` again. The restart reloads every JSON file.
-5. Docker run: run `docker compose down`, then `docker compose up --build`. Rebuilding is required because the JSON files are copied into the image.
-6. Open `/health` and check that `kb_brands` and `kb_chunks` increased. Ask one question that only the new file can answer and check its citation.
-
-`POST /api/ingest` still accepts one complete `{ "brands": [...] }` body and replaces the currently loaded in-memory index until restart. Use it for a temporary live refresh. For a durable knowledge base, save the JSON under `data\` and restart or rebuild as described above.
-
-Startup is intentionally strict: a malformed JSON file or a file without a `brands` array is reported instead of being silently ignored.
+FastAPI · [Moss](https://github.com/usemoss/moss) (hybrid retrieval) · Intercom (human handoff) · Tesseract OCR · Docker · Render
