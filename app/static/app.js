@@ -286,38 +286,21 @@ byId("newChatButton").addEventListener("click", async () => {
 });
 input.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } });
 input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 110)}px`; });
-// On load/refresh, restore the whole stored conversation for this session
-// (customer messages, AI answers, pause notice, human replies, in order).
-// lastHumanReplyId moves past the restored human replies so the 5s poll
-// does not render them a second time.
-async function restoreTranscript() {
+// Every page load (first visit or refresh) starts a completely fresh AI
+// chat: the old session is wiped server-side and forgotten locally, so the
+// page never comes back to an old conversation or a paused human state.
+// The round reset button does the same on demand without a reload.
+async function wipePreviousSession() {
   const id = localStorage.getItem("zeroqueue_session_id");
   if (!id) return;
   try {
-    const response = await fetch(`/api/transcript/${id}`);
-    if (!response.ok) return;
-    const body = await response.json();
-    (body.messages || []).forEach((msg) => {
-      const attachmentImage = msg.attachment && msg.attachment.kind === "image" ? msg.attachment.url : null;
-      if (msg.role === "customer") addMessage("customer", msg.text, attachmentImage);
-      else if (msg.role === "human") addMessage("human", msg.text);
-      else if (msg.role === "assistant") {
-        addMessage("bot", msg.text, null, msg.kind === "clarifying");
-      }
-      // One small note line only - raw OCR text never renders as a bubble.
-      const note = (msg.attachment && msg.attachment.note) || msg.attachment_note;
-      if (msg.role === "customer" && note) addMessage("system", note);
-    });
-    lastHumanReplyId = body.last_human_reply_id || 0;
-    // The trace panel is per-request state on the server; restore it too so
-    // a refreshed chat shows its real state instead of the empty panel.
-    try {
-      const trace = await (await fetch(`/api/trace/${id}`)).json();
-      if (trace && trace.state && trace.state !== "empty") updateTrace(trace);
-    } catch (_) { /* Panel stays in its empty state. */ }
-  } catch (_) { /* A failed restore leaves the normal empty state. */ }
+    await fetch("/api/reset", { method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: id}) });
+  } catch (_) { /* A failed wipe still leaves a fresh local session id. */ }
+  localStorage.removeItem("zeroqueue_session_id");
 }
 
 checkHealth();
-restoreTranscript();
+wipePreviousSession();
 setInterval(checkHumanReplies, 5000);
