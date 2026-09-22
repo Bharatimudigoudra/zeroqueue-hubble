@@ -204,7 +204,7 @@ async function sendMessage(retry = null) {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "Request failed");
     typing.remove();
-    addMessage("bot", body.answer, null, body.status === "clarifying");
+    if (body.answer) addMessage("bot", body.answer, null, body.status === "clarifying");
     if (body.attachment_note) addMessage("system", `Attachment: ${body.attachment_note}`);
     updateTrace(body.trace);
   } catch (error) {

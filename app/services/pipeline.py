@@ -5,13 +5,39 @@ fine for a demo and keeps the project dependency-light). The shape of
 every public response matches the ZeroQueue backend exactly, so the
 existing web page works against this service unchanged.
 """
+import re
 import time
 from typing import Dict, List, Optional
 
 from app.services import answer_service, clarification, confidence, escalation, intercom_handoff, moss_service
 
-AI_PAUSED_REPLY = ("The AI is paused for this conversation. Human support can "
-                   "review it when the live inbox is connected.")
+
+# Generic field labels a voucher template prints ABOVE the actual error
+# value ("ERROR MESSAGE", "STATUS", ...). They match the error regex but
+# carry no information, so they must never be quoted as the error.
+_ERROR_LABELS = {"error", "errormessage", "errorcode", "errordescription",
+                 "status", "message", "reason", "details"}
+# Words that mark a real error statement, not a label.
+_STRONG_ERROR = re.compile(
+    r"invalid|expired|already used|declined|rejected|not activated|"
+    r"not applicable|limit exceeded|failed|failure", re.IGNORECASE)
+
+
+def _is_label_line(line: str) -> bool:
+    return re.sub(r"[^a-z]", "", line.casefold()) in _ERROR_LABELS
+
+
+def extract_error_line(text: str) -> str:
+    """Pick the line that states the actual error, skipping field labels."""
+    lines = [ln.strip().strip(".").strip()
+             for ln in (text or "").splitlines() if ln.strip()]
+    strong = [ln for ln in lines
+              if _STRONG_ERROR.search(ln) and not _is_label_line(ln)]
+    if strong:
+        return strong[0]
+    weak = [ln for ln in lines
+            if clarification.has_error(ln) and not _is_label_line(ln)]
+    return weak[0] if weak else ""
 
 # session_id -> {"status": "open" | "handoff", "trace": {...}}
 _SESSIONS: Dict[str, dict] = {}
@@ -66,7 +92,10 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
             )
         else:
             handoff = {"confirmed": False}
-        return {"answer": AI_PAUSED_REPLY, "status": "handoff",
+        # The pause notice is shown once, when the handoff begins. Follow-up
+        # customer messages while paused are still stored and forwarded to the
+        # human, but no banner is repeated in the customer chat.
+        return {"answer": "", "status": "handoff",
                 "citations": [], "trace": sess["trace"],
                 "handoff_confirmed": handoff["confirmed"]}
 
@@ -84,8 +113,14 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
                            f"{attachment_text.strip()}").strip()
     following_up = bool(sess.get("pending_issue"))
     issue_text = f"{sess.get('pending_issue', '')} {current_context}".strip()
-    brand = sess.get("pending_brand") or clarification.find_brand(
+    # A brand sticks to the conversation once detected. Generic follow-up
+    # words ("what about the refund?") must not drop the scoping, and only
+    # an explicitly detected new brand may move it.
+    detected_brand = sess.get("pending_brand") or clarification.find_brand(
         current_context if following_up else issue_text, moss_service.brand_names())
+    if detected_brand:
+        sess["brand"] = detected_brand
+    brand = detected_brand or sess.get("brand", "")
     error_supplied = (clarification.has_error(current_context) if following_up
                       else clarification.has_error(issue_text))
     needs_clarification = (clarification.has_issue(issue_text)
@@ -120,28 +155,47 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
     # A confirmed brand narrows the local fallback before keyword scoring.
     # This also covers brands read from attachment OCR above.
     retrieval = moss_service.search(query, brand=brand or "")
-    passages = retrieval["passages"]
+    scored_passages = retrieval["passages"]
+    passages = list(scored_passages)
 
     # A reported error (typed or read from an attachment) needs the brand's
     # rules next to the how-to chunks. Keyword scoring cannot find them -
     # the KB never names the customer's exact error - so pull the policy
     # chunks deterministically and merge them after the scored passages.
+    # Two deterministic inclusions keyword scoring cannot be trusted with:
+    # - a reported error needs the brand's rules (the KB never names the
+    #   customer's exact error, so scoring cannot find them);
+    # - a "how do I redeem" question must surface the brand's redeem chunks
+    #   (FAQ section names repeat the brand and outscore them).
+    # Order is deliberate: redeem steps first, then the rules to check, then
+    # whatever the scorer found.
+    seen_ids = {p.id for p in passages}
+    front = []
+    if brand and re.search(r"\bredeem\b", current_context, re.IGNORECASE):
+        for chunk in moss_service.brand_policy_chunks(
+                brand, ("redeem-app", "redeem-website", "redeem-online",
+                        "redeem-offline")):
+            if chunk.id not in seen_ids:
+                front.append(chunk)
+                seen_ids.add(chunk.id)
+
     error_line = ""
+    policy_chunks = []
     if error_supplied and brand:
-        for line in current_context.splitlines():
-            if clarification.has_error(line):
-                error_line = line.strip().strip(".")
-                break
-        seen_ids = {p.id for p in passages}
-        for policy in moss_service.brand_policy_chunks(
+        error_line = extract_error_line(current_context)
+        for chunk in moss_service.brand_policy_chunks(
                 brand, ("restrictions", "terms-p1", "validity")):
-            if policy.id not in seen_ids:
-                passages.append(policy)
-                seen_ids.add(policy.id)
-        passages = passages[:5]
+            if chunk.id not in seen_ids:
+                policy_chunks.append(chunk)
+                seen_ids.add(chunk.id)
+
+    passages = (front + policy_chunks + passages)[:5]
 
     # 2. Evidence-based confidence + escalation decision (never the LLM's).
-    band = confidence.band(passages)
+    # Confidence is judged on the SCORED passages only: the deterministic
+    # redeem/policy chunks carry no retrieval score, and letting them set
+    # the band would either fake confidence or fake weakness.
+    band = confidence.band(scored_passages)
     reason = escalation.decide(message or "", band)
     if reason:
         sess["status"] = "handoff"

@@ -10,8 +10,9 @@ import logging
 from typing import List, Optional
 
 from app.adapters import intercom
-from app.services import (answer_service, confidence, handoff_store,
-                          intercom_handoff, moss_service, pipeline)
+from app.services import (answer_service, clarification, confidence,
+                          handoff_store, intercom_handoff, moss_service,
+                          pipeline)
 
 log = logging.getLogger("zeroqueue.agent_console")
 
@@ -71,7 +72,11 @@ def suggest_answer(session_id: str,
                    and m["text"] not in _PLACEHOLDER_CUSTOMER_TEXTS), "")
     if not latest:
         return {"answer": "", "citations": [], "confidence_band": None}
-    passages = moss_service.search(latest)["passages"]
+    # Scope retrieval to THIS conversation's brand. An unscoped search ties
+    # across all 100 brands and surfaces another brand's redeem chunks.
+    all_text = " ".join(m["text"] for m in transcript)
+    brand = clarification.find_brand(all_text, moss_service.brand_names()) or ""
+    passages = moss_service.search(latest, brand=brand)["passages"]
     if not passages:
         return {"answer": "", "citations": [],
                 "confidence_band": confidence.band(passages)}

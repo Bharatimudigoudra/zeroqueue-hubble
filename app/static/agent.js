@@ -15,6 +15,10 @@
   const refreshButton = document.getElementById('refreshButton');
 
   let selectedSession = null;
+  // Server messages rendered so far for the open chat. Replies the agent
+  // sends are appended locally and never come back through this list, so
+  // the count must only track what the server returned.
+  let renderedServerMessages = 0;
 
   // Optional protection: only asked for when the server demands a key.
   function agentKey() { return localStorage.getItem('zq-agent-key') || ''; }
@@ -118,6 +122,7 @@
     transcriptEl.innerHTML = '';
     (data.messages || []).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text)); });
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    renderedServerMessages = (data.messages || []).length;
 
     const suggestion = data.suggestion || {};
     replyEditor.value = '';
@@ -164,5 +169,22 @@
 
   loadHealth();
   loadQueue();
-  setInterval(loadQueue, 5000);
+  // While a chat is open, pull in new CUSTOMER messages as they arrive
+  // (the AI is paused during handoff, but the customer can still write).
+  // Only appends messages the server has since stored - the agent's typed
+  // draft and their just-sent replies stay untouched.
+  async function refreshSelected() {
+    if (!selectedSession || detailBody.classList.contains('hidden')) return;
+    try {
+      const data = await (await api('/api/agent/conversations/' + encodeURIComponent(selectedSession))).json();
+      const messages = data.messages || [];
+      if (messages.length > renderedServerMessages) {
+        messages.slice(renderedServerMessages).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text)); });
+        renderedServerMessages = messages.length;
+        transcriptEl.scrollTop = transcriptEl.scrollHeight;
+      }
+    } catch (e) { /* a quiet poll failure must not interrupt the reply */ }
+  }
+
+  setInterval(function () { loadQueue(); refreshSelected(); }, 5000);
 })();
