@@ -173,6 +173,25 @@ def search(query: str, top_k: int = 3, brand: str = "") -> dict:
             "provider": provider}
 
 
+def brand_policy_chunks(brand: str, kinds: Tuple[str, ...]) -> List[Chunk]:
+    """Return one brand's chunks for the given section kinds, unscored.
+
+    Keyword scoring cannot find troubleshooting material for an error the KB
+    never names (for example "voucher code is invalid") - the brand's rules
+    (restrictions, terms, validity) are the honest "what to check" source.
+    """
+    wanted = brand.casefold().strip()
+    by_kind = {}
+    for chunk in _INDEX:
+        if (chunk.title.casefold().strip() == wanted
+                and chunk.section_kind in kinds
+                and chunk.section_kind not in by_kind):
+            by_kind[chunk.section_kind] = chunk
+    # Return in the requested kind order, not index order: restrictions and
+    # terms are the "what to check" material, validity is a fallback.
+    return [by_kind[kind] for kind in kinds if kind in by_kind]
+
+
 def brand_names() -> List[str]:
     """Names used only to decide whether a support issue names its brand."""
     return sorted({chunk.title for chunk in _INDEX if chunk.title})

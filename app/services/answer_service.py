@@ -29,6 +29,11 @@ Rules:
   something the customer showed you (a photo, screenshot, or receipt)
   and use it together with the passages - e.g. match a brand name or
   order number from it against the passage.
+- If the customer message or the OCR shows an error (for example a voucher
+  code being rejected), address that error FIRST: say what to check using
+  only the passages. If no passage covers that exact error, say so honestly
+  and offer the human handoff - never invent a cause or a fix.
+- Then answer the how-to question from the passages.
 - Keep it short: direct answer, then one next step.
 - End with a "Sources:" line listing the [n] labels you actually used.
 
@@ -49,6 +54,37 @@ def make_citations(passages: List[Chunk]) -> List[dict]:
     return [{"label": f"[{i}] {p.title} - {p.section}",
              "url": p.safe_url or None}
             for i, p in enumerate(passages[:3], start=1)]
+
+
+def _chunk_body(chunk: Chunk, limit: int = 400) -> str:
+    """Chunk text without the repeated 'Brand - Section:' heading."""
+    body = " ".join(chunk.text.split())
+    repeated_heading = f"{chunk.title} - {chunk.section}:"
+    if body.lower().startswith(repeated_heading.lower()):
+        body = body[len(repeated_heading):].strip()
+    return body[:limit]
+
+
+def quote_issue_answer(passages: List[Chunk], error_line: str) -> str:
+    """MOCK answer for a reported error: honest about KB coverage, then the
+    grounded checks and the how-to steps, then the human handoff offer."""
+    redeem = next((p for p in passages if p.section_kind.startswith("redeem")), None)
+    rules = next((p for p in passages
+                  if p.section_kind in ("restrictions", "terms-p1", "validity")), None)
+    brand = (redeem or rules or passages[0]).title
+    parts = [
+        (f'Your image shows: "{error_line}". The support knowledge base does '
+         "not have an entry for this exact error, so I cannot say why the "
+         "code was rejected."),
+    ]
+    if rules:
+        parts.append(f"What to check from the {brand} rules: "
+                     f"{_chunk_body(rules, 260)}")
+    if redeem:
+        parts.append(f"To redeem correctly: {_chunk_body(redeem, 400)}")
+    parts.append("If the code still shows invalid after these checks, say "
+                 "\"human\" and a teammate will take over.")
+    return "\n\n".join(parts)
 
 
 def quote_chunk(passages: List[Chunk]) -> str:
@@ -83,7 +119,8 @@ def grounded_answer(query: str, passages: List[Chunk]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-def build_answer(query: str, passages: List[Chunk]) -> Tuple[str, List[dict]]:
+def build_answer(query: str, passages: List[Chunk],
+                 error_line: str = "") -> Tuple[str, List[dict]]:
     citations = make_citations(passages)
     if not config.MOCK_MODE and config.LLM_API_KEY:
         try:
@@ -91,9 +128,11 @@ def build_answer(query: str, passages: List[Chunk]) -> Tuple[str, List[dict]]:
             text = _SOURCES_TAIL.sub("", text).rstrip()
         except Exception:
             log.exception("LLM answer failed - falling back to chunk quote")
-            text = quote_chunk(passages)
+            text = (quote_issue_answer(passages, error_line) if error_line
+                    else quote_chunk(passages))
     else:
-        text = quote_chunk(passages)
+        text = (quote_issue_answer(passages, error_line) if error_line
+                else quote_chunk(passages))
     # Citations stay in the response and Moss Trace panel. Keep the customer
     # answer itself focused on the answer instead of repeating source labels.
     return text, citations

@@ -122,6 +122,24 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
     retrieval = moss_service.search(query, brand=brand or "")
     passages = retrieval["passages"]
 
+    # A reported error (typed or read from an attachment) needs the brand's
+    # rules next to the how-to chunks. Keyword scoring cannot find them -
+    # the KB never names the customer's exact error - so pull the policy
+    # chunks deterministically and merge them after the scored passages.
+    error_line = ""
+    if error_supplied and brand:
+        for line in current_context.splitlines():
+            if clarification.has_error(line):
+                error_line = line.strip().strip(".")
+                break
+        seen_ids = {p.id for p in passages}
+        for policy in moss_service.brand_policy_chunks(
+                brand, ("restrictions", "terms-p1", "validity")):
+            if policy.id not in seen_ids:
+                passages.append(policy)
+                seen_ids.add(policy.id)
+        passages = passages[:5]
+
     # 2. Evidence-based confidence + escalation decision (never the LLM's).
     band = confidence.band(passages)
     reason = escalation.decide(message or "", band)
@@ -145,7 +163,8 @@ def run_pipeline(session_id: str, message: str, attachment_text: str = "") -> di
                 "trace": sess["trace"], "handoff_confirmed": handoff["confirmed"]}
 
     # 3. Grounded answer with citations.
-    answer, citations = answer_service.build_answer(query, passages)
+    answer, citations = answer_service.build_answer(query, passages,
+                                                    error_line=error_line)
     sess["messages"].append({"role": "assistant", "text": answer})
     _record_trace(sess, retrieval["retrieval_ms"], total_start, band,
                   "answered", passages)

@@ -1,33 +1,36 @@
-Console + human-reply fixes - 2026-09-22
+Error-aware answers + all console fixes - 2026-09-22
 
-This ZIP is CUMULATIVE - it includes every earlier change (human replies
-reach the customer chat, empty reply box, no placeholder, clear-after-send,
-no AI-suggested heading/badge, no Internal note UI, plain-sentence
-clarifying questions, plain human replies). Applying this ZIP alone is
-enough.
+This ZIP is CUMULATIVE - it includes every earlier change (error-aware
+answers, human replies reach the customer chat, empty reply box, no
+placeholder, clear-after-send, no AI-suggested heading/badge, no Internal
+note UI, plain-sentence clarifying questions, plain human replies).
+Applying this ZIP alone is enough.
 
 One command applies it (paste in cmd):
 
-cd /d E:\Hackathons\zeroqueue-hubble && tar -xf "%USERPROFILE%\Downloads\zeroqueue-human-reply-plain.zip"
+cd /d E:\Hackathons\zeroqueue-hubble && tar -xf "%USERPROFILE%\Downloads\zeroqueue-error-aware-answers.zip"
 
 Then restart the backend (CTRL+C, then python -m uvicorn app.main:app --reload)
 and hard-refresh the browser tabs (Ctrl+F5).
 
 Files inside, and where they go:
-1. app\api_intercom.py   -> E:\Hackathons\zeroqueue-hubble\app\api_intercom.py
-2. app\static\agent.html -> E:\Hackathons\zeroqueue-hubble\app\static\agent.html
-3. app\static\agent.js   -> E:\Hackathons\zeroqueue-hubble\app\static\agent.js
-4. app\static\app.js     -> E:\Hackathons\zeroqueue-hubble\app\static\app.js
+1. app\api_intercom.py            -> E:\Hackathons\zeroqueue-hubble\app\api_intercom.py
+2. app\services\pipeline.py       -> E:\Hackathons\zeroqueue-hubble\app\services\pipeline.py
+3. app\services\answer_service.py -> E:\Hackathons\zeroqueue-hubble\app\services\answer_service.py
+4. app\services\moss_service.py   -> E:\Hackathons\zeroqueue-hubble\app\services\moss_service.py
+5. app\static\agent.html          -> E:\Hackathons\zeroqueue-hubble\app\static\agent.html
+6. app\static\agent.js            -> E:\Hackathons\zeroqueue-hubble\app\static\agent.js
+7. app\static\app.js              -> E:\Hackathons\zeroqueue-hubble\app\static\app.js
 
-What changed this time:
-1. CUSTOMER CHAT NOT SHOWING HUMAN REPLIES - the Intercom webhook reader
-   (app/api_intercom.py) read conversation_message first, which is always
-   the CUSTOMER's original question, so your reply was never saved. It now
-   reads the last conversation part, which is where Intercom puts the reply.
-2. The console reply box clears itself after a successful Approve & send;
-   a failed send keeps your text.
-3. The reply box starts completely empty (no placeholder text).
-4. Human replies on the customer page now render as plain text, so a
-   mid-sentence " - " no longer turns into a bullet.
+What changed this time (the voucher-image answer):
+- When an attachment or message shows an explicit error (like VOUCHER CODE
+  IS INVALID) and the brand is known, the bot now also pulls the brand's
+  rules chunks (restrictions/terms/validity) next to the how-to chunks,
+  and the answer says: what the image shows, honestly that the KB has no
+  entry for this exact error, what to check from the brand's rules, the
+  correct redeem steps, and to say "human" if it still fails. Nothing is
+  invented - everything quoted comes from the KB. Normal questions without
+  an error behave exactly as before.
 
-Verified locally: 54/54 tests pass; screenshots checked for both pages.
+Verified locally: 54/54 tests pass; screenshot checked for this exact
+question + attachment.
