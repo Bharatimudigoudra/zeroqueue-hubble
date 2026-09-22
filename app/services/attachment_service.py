@@ -2,16 +2,20 @@
 
 - .txt/.md/.json/.csv are read directly.
 - Images (png/jpg/jpeg/webp/bmp/tiff) go through the free local
-  Tesseract OCR if it is installed (TESSERACT_CMD or on PATH).
+  Tesseract OCR. We try, in order: TESSERACT_CMD from .env, a plain
+  "tesseract" on PATH, then the default Windows install folder
+  (C:\\Program Files\\Tesseract-OCR\\tesseract.exe). Only if none of
+  those works do we say OCR is unavailable.
 - Anything else gets an honest 400: we say what we cannot read instead
   of pretending.
 
 extract() returns (text, note) where note is the honest one-liner the UI
 shows (e.g. "Read 42 words from receipt.png via OCR").
 """
+import os
 import subprocess
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 from app import config
 
@@ -23,13 +27,55 @@ class UnsupportedFileError(Exception):
 TEXT_EXTS = {".txt", ".md", ".json", ".csv", ".log"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
+# The default install location of the UB-Mannheim Windows build. Many
+# Windows users install Tesseract there and never put it on PATH, so a
+# bare "tesseract" fails even though OCR is installed.
+_WINDOWS_DEFAULT_TESSERACT = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+_WINDOWS_DEFAULT_TESSERACT_X86 = r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
+
+
+def _clean(value: str) -> str:
+    """Trim whitespace and any surrounding quotes from a configured path.
+
+    Windows users often paste TESSERACT_CMD="C:\\Program Files\\..." with
+    quotes (because of the space); subprocess wants the bare path.
+    """
+    return (value or "").strip().strip('"').strip("'").strip()
+
 
 def _tesseract_available(cmd: str) -> bool:
     try:
-        subprocess.run([cmd, "--version"], capture_output=True, timeout=10)
-        return True
+        proc = subprocess.run([cmd, "--version"], capture_output=True, timeout=10)
+        return proc.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def _tesseract_candidates() -> List[str]:
+    """All the commands worth trying, best first, duplicates removed."""
+    candidates: List[str] = []
+    configured = _clean(config.TESSERACT_CMD)
+    if configured:
+        candidates.append(configured)
+    candidates.append("tesseract")  # works when Tesseract is on PATH
+    if os.name == "nt":
+        candidates.append(_WINDOWS_DEFAULT_TESSERACT)
+        candidates.append(_WINDOWS_DEFAULT_TESSERACT_X86)
+    # De-duplicate while keeping order.
+    seen, unique = set(), []
+    for cmd in candidates:
+        if cmd and cmd not in seen:
+            seen.add(cmd)
+            unique.append(cmd)
+    return unique
+
+
+def _resolve_tesseract() -> str:
+    """Return the first Tesseract command that actually runs, or ""."""
+    for cmd in _tesseract_candidates():
+        if _tesseract_available(cmd):
+            return cmd
+    return ""
 
 
 def extract(filename: str, data: bytes) -> Tuple[str, str]:
@@ -41,11 +87,13 @@ def extract(filename: str, data: bytes) -> Tuple[str, str]:
         return text, f"Read {lines} line{'s' if lines != 1 else ''} from {filename}."
 
     if ext in IMAGE_EXTS:
-        cmd = config.TESSERACT_CMD or "tesseract"
-        if not _tesseract_available(cmd):
+        cmd = _resolve_tesseract()
+        if not cmd:
             raise UnsupportedFileError(
                 "This is an image, but the free Tesseract OCR is not "
                 "installed (or TESSERACT_CMD in .env does not point at it). "
+                "We also tried 'tesseract' on PATH and the default install "
+                "folder (C:\\Program Files\\Tesseract-OCR). "
                 "See the README for the one-time install step.")
         tmp = config.UPLOAD_DIR / f"upload-{Path(filename).name}"
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

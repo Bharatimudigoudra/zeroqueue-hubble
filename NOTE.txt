@@ -1,0 +1,24 @@
+OCR fix - 2026-09-22
+
+Two replacement files. Copy them over the ones in E:\Hackathons\zeroqueue-hubble,
+keeping the same folders:
+
+1. app\config.py                    -> E:\Hackathons\zeroqueue-hubble\app\config.py
+2. app\services\attachment_service.py -> E:\Hackathons\zeroqueue-hubble\app\services\attachment_service.py
+
+Steps (one at a time):
+1. CTRL+C the backend terminal (stop uvicorn first).
+2. Copy the two files over the old ones.
+3. Restart: python -m uvicorn app.main:app --reload
+4. Upload a voucher image on localhost:8000 to test.
+
+What changed:
+- If TESSERACT_CMD in .env is missing, quoted, or never loaded, the app now
+  also tries the standard install folder C:\Program Files\Tesseract-OCR\tesseract.exe
+  before giving up.
+- The .env reader now handles files saved by Notepad with a UTF-8 BOM, which
+  was silently hiding the first line's key.
+- Quoted paths like "C:\Program Files\..." are cleaned before use.
+
+You can even delete the TESSERACT_CMD line from .env after this; the default
+install path is found on its own.

@@ -17,7 +17,7 @@ def _load_dotenv(path: Path) -> None:
     """Minimal .env loader: KEY=VALUE lines, # comments. Existing env wins."""
     if not path.exists():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -66,7 +66,8 @@ LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
 # --- Attachments / OCR ---
 UPLOAD_DIR = REPO_ROOT / "uploads"
 MAX_UPLOAD_MB = float(os.environ.get("MAX_UPLOAD_MB", "15"))
-TESSERACT_CMD = os.environ.get("TESSERACT_CMD", "").strip()
+TESSERACT_CMD = (os.environ.get("TESSERACT_CMD", "")
+               .strip().strip('"').strip("'").strip())
 
 # --- Moss in-process retrieval ---
 MOSS_PROJECT_ID = os.environ.get("MOSS_PROJECT_ID", "")
