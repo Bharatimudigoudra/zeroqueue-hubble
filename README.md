@@ -9,6 +9,8 @@
 
 [Live demo](https://zeroqueue-hubble.onrender.com) · [Agent console](https://zeroqueue-hubble.onrender.com/agent) · [API contract](docs/api-contract.md) · [Health check](https://zeroqueue-hubble.onrender.com/health)
 
+---
+
 ## Problem Statement
 
 A platform like Hubble Money operates across a large number of brands, and every brand has its own rules - redemption steps, validity, restrictions, online and offline usage, terms and conditions. The information needed to answer a customer's question already exists, scattered across brand pages, product pages, FAQs and T&Cs.
