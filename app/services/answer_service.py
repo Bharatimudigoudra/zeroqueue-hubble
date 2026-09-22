@@ -52,10 +52,14 @@ def make_citations(passages: List[Chunk]) -> List[dict]:
 
 
 def quote_chunk(passages: List[Chunk]) -> str:
-    """Quote the strongest chunk directly. Honest and deterministic."""
+    """Quote the strongest chunk without repeating its brand and section."""
     top = passages[0]
-    body = " ".join(top.text.split())[:400]
-    return (f"Based on our {top.title} information ({top.section}): {body}\n\n"
+    body = " ".join(top.text.split())
+    repeated_heading = f"{top.title} - {top.section}:"
+    if body.lower().startswith(repeated_heading.lower()):
+        body = body[len(repeated_heading):].strip()
+    body = body[:400]
+    return (f"{body}\n\n"
             f"Next step: if this does not solve it, say \"human\" and "
             f"a teammate will take over.")
 
@@ -90,5 +94,6 @@ def build_answer(query: str, passages: List[Chunk]) -> Tuple[str, List[dict]]:
             text = quote_chunk(passages)
     else:
         text = quote_chunk(passages)
-    source_line = "  ".join(c["label"] for c in citations)
-    return f"{text}\n\nSources: {source_line}", citations
+    # Citations stay in the response and Moss Trace panel. Keep the customer
+    # answer itself focused on the answer instead of repeating source labels.
+    return text, citations

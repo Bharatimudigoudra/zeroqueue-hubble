@@ -14,13 +14,16 @@ def test_chat_answers_with_citations_and_trace(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "answered"
-    assert "Sources: [1]" in body["answer"]
+    assert "Sources:" not in body["answer"]
     assert body["citations"][0]["label"].startswith("[1] ")
     trace = body["trace"]
     assert trace["state"] == "answered"
     assert trace["confidence_band"] in ("medium", "high")
     assert trace["source_count"] >= 1
     assert trace["retrieval_ms"] is not None and trace["total_ms"] is not None
+    assert trace["sources"] == body["citations"]
+    assert "Based on our Amazon shopping information" not in body["answer"]
+    assert "Amazon shopping - How to redeem" not in body["answer"]
 
 
 def test_handoff_then_ai_stays_silent(client):
@@ -70,7 +73,7 @@ def test_ingest_replaces_the_index(client):
     assert resp.json() == {"status": "ingested", "brands": 1, "chunks": 1}
     resp = client.post("/api/chat", data={"session_id": "t6",
                                           "message": "testbrand validity?"})
-    assert "Testbrand" in resp.json()["answer"]
+    assert "Valid 6 months." in resp.json()["answer"]
 
 
 def test_demo_reset_requires_secret(client):
