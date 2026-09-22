@@ -1,4 +1,4 @@
-/* Agent console: review AI suggestions, approve replies, add internal notes. */
+/* Agent console: read escalated chats and approve replies. */
 (function () {
   const queueList = document.getElementById('queueList');
   const detailEmpty = document.getElementById('detailEmpty');
@@ -7,14 +7,9 @@
   const detailMeta = document.getElementById('detailMeta');
   const transcriptEl = document.getElementById('transcript');
   const replyEditor = document.getElementById('replyEditor');
-  const confidenceEl = document.getElementById('suggestionConfidence');
   const sourcesBox = document.getElementById('suggestionSources');
   const sourceList = document.getElementById('suggestionSourceList');
   const approveButton = document.getElementById('approveButton');
-  const noteToggle = document.getElementById('noteToggle');
-  const noteArea = document.getElementById('noteArea');
-  const noteEditor = document.getElementById('noteEditor');
-  const noteButton = document.getElementById('noteButton');
   const actionStatus = document.getElementById('actionStatus');
   const statusPill = document.getElementById('statusPill');
   const refreshButton = document.getElementById('refreshButton');
@@ -125,8 +120,7 @@
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
 
     const suggestion = data.suggestion || {};
-    replyEditor.value = suggestion.answer || '';
-    confidenceEl.textContent = (suggestion.confidence_band || 'no sources').toUpperCase();
+    replyEditor.value = '';
     if (suggestion.citations && suggestion.citations.length) {
       sourcesBox.classList.remove('hidden');
       sourceList.innerHTML = '';
@@ -146,13 +140,14 @@
   approveButton.addEventListener('click', async function () {
     if (!selectedSession) return;
     const body = replyEditor.value.trim();
-    if (!body) { setStatus('Write or keep a reply first.', false); return; }
+    if (!body) { setStatus('Write a reply first.', false); return; }
     approveButton.disabled = true;
     setStatus('Sending through Intercom...', true);
     try {
       const result = await (await api('/api/agent/conversations/' + encodeURIComponent(selectedSession) + '/reply',
         { method: 'POST', body: JSON.stringify({ body: body }) })).json();
       if (result.sent) {
+        replyEditor.value = '';
         transcriptEl.appendChild(bubble('agent', body));
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
         setStatus('Sent - the customer sees this in their chat.', true);
@@ -163,29 +158,6 @@
       setStatus('Not sent: network error.', false);
     }
     approveButton.disabled = false;
-  });
-
-  noteToggle.addEventListener('click', function () { noteArea.classList.toggle('hidden'); });
-
-  noteButton.addEventListener('click', async function () {
-    if (!selectedSession) return;
-    const body = noteEditor.value.trim();
-    if (!body) { setStatus('Write the internal note first.', false); return; }
-    noteButton.disabled = true;
-    try {
-      const result = await (await api('/api/agent/conversations/' + encodeURIComponent(selectedSession) + '/note',
-        { method: 'POST', body: JSON.stringify({ body: body }) })).json();
-      if (result.sent) {
-        noteEditor.value = '';
-        noteArea.classList.add('hidden');
-        setStatus('Internal note added in Intercom. The customer never sees it.', true);
-      } else {
-        setStatus('Note not added: ' + (result.reason || 'unknown error') + '.', false);
-      }
-    } catch (e) {
-      setStatus('Note not added: network error.', false);
-    }
-    noteButton.disabled = false;
   });
 
   refreshButton.addEventListener('click', loadQueue);

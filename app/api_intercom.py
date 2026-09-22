@@ -68,7 +68,12 @@ def process_event(payload: dict):
     session_id = handoff_store.session_for(conversation_id)
     if not session_id:
         return  # not a browser-session conversation owned by this app
-    message = item.get("conversation_message") or item.get("conversation_parts", {}).get("conversation_parts", [{}])[-1]
+    # The new reply is the LAST conversation part. conversation_message is
+    # always the message that STARTED the conversation, so reading it here
+    # would mistake every admin reply for the customer's original question
+    # and the reply would never reach the customer chat.
+    parts = (item.get("conversation_parts") or {}).get("conversation_parts") or []
+    message = parts[-1] if parts else (item.get("conversation_message") or {})
     author = message.get("author") or {}
     body = clean_body(message.get("body", ""))
     if not body:

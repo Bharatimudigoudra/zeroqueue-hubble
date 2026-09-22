@@ -30,7 +30,7 @@
       <section class="chat-card agent-detail">
         <div id="detailEmpty" class="detail-empty">
           <div class="bot-avatar">ZQ</div>
-          <div><strong>Pick a conversation</strong><p>Select an escalated chat on the left to review the AI's suggested answer, edit it, and approve the reply.</p></div>
+          <div><strong>Pick a conversation</strong><p>Select an escalated chat on the left to read the transcript, write your reply, and approve it.</p></div>
         </div>
 
         <div id="detailBody" class="hidden">
@@ -45,23 +45,12 @@
           <div id="transcript" class="messages agent-transcript"></div>
 
           <div class="suggestion-card">
-            <div class="suggestion-heading">
-              <span class="eyebrow">AI SUGGESTED ANSWER</span>
-              <span id="suggestionConfidence" class="trace-state">-</span>
-            </div>
-            <p class="suggestion-help">Edit freely - only what you approve is sent to the customer, through Intercom.</p>
+            <p class="suggestion-help">Write the reply to the customer below. Only what you approve is sent, through Intercom.</p>
             <textarea id="replyEditor" rows="6" aria-label="Reply to customer"></textarea>
             <div id="suggestionSources" class="sources hidden"><small>SOURCES USED</small><ul id="suggestionSourceList"></ul></div>
             <div class="composer-actions agent-actions">
-              <button id="noteToggle" class="attach-button" type="button">Internal note</button>
+              <span></span>
               <button id="approveButton" class="send-button" type="button"><span>Approve &amp; send</span> ➜</button>
-            </div>
-            <div id="noteArea" class="note-area hidden">
-              <textarea id="noteEditor" rows="3" placeholder="Internal note for the team (never shown to the customer)" aria-label="Internal note"></textarea>
-              <div class="composer-actions agent-actions">
-                <span></span>
-                <button id="noteButton" class="attach-button" type="button">Add note</button>
-              </div>
             </div>
             <p id="actionStatus" class="action-status"></p>
           </div>

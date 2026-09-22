@@ -64,7 +64,13 @@ function renderMarkdown(text) {
   return result;
 }
 
-function addMessage(role, text, imageUrl = null) {
+function renderPlain(text) {
+  // No list handling: the text is shown exactly as written. Used for
+  // clarifying questions, which are single plain sentences.
+  return escapeHtml(text).replaceAll("\n", "<br>");
+}
+
+function addMessage(role, text, imageUrl = null, plain = false) {
   byId("welcome")?.remove();
   const row = document.createElement("div");
   row.className = `message-row ${role}`;
@@ -82,10 +88,10 @@ function addMessage(role, text, imageUrl = null) {
     label.textContent = "Human support";
     bubble.appendChild(label);
     const content = document.createElement("span");
-    content.innerHTML = renderMarkdown(text);
+    content.innerHTML = renderPlain(text);
     bubble.appendChild(content);
   } else if (role === "bot") {
-    bubble.innerHTML = renderMarkdown(text);
+    bubble.innerHTML = plain ? renderPlain(text) : renderMarkdown(text);
   } else {
     bubble.textContent = text;
   }
@@ -198,7 +204,7 @@ async function sendMessage(retry = null) {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "Request failed");
     typing.remove();
-    addMessage("bot", body.answer);
+    addMessage("bot", body.answer, null, body.status === "clarifying");
     if (body.attachment_note) addMessage("system", `Attachment: ${body.attachment_note}`);
     updateTrace(body.trace);
   } catch (error) {

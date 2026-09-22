@@ -1,24 +1,33 @@
-OCR fix - 2026-09-22
+Console + human-reply fixes - 2026-09-22
 
-Two replacement files. Copy them over the ones in E:\Hackathons\zeroqueue-hubble,
-keeping the same folders:
+This ZIP is CUMULATIVE - it includes every earlier change (human replies
+reach the customer chat, empty reply box, no placeholder, clear-after-send,
+no AI-suggested heading/badge, no Internal note UI, plain-sentence
+clarifying questions, plain human replies). Applying this ZIP alone is
+enough.
 
-1. app\config.py                    -> E:\Hackathons\zeroqueue-hubble\app\config.py
-2. app\services\attachment_service.py -> E:\Hackathons\zeroqueue-hubble\app\services\attachment_service.py
+One command applies it (paste in cmd):
 
-Steps (one at a time):
-1. CTRL+C the backend terminal (stop uvicorn first).
-2. Copy the two files over the old ones.
-3. Restart: python -m uvicorn app.main:app --reload
-4. Upload a voucher image on localhost:8000 to test.
+cd /d E:\Hackathons\zeroqueue-hubble && tar -xf "%USERPROFILE%\Downloads\zeroqueue-human-reply-plain.zip"
 
-What changed:
-- If TESSERACT_CMD in .env is missing, quoted, or never loaded, the app now
-  also tries the standard install folder C:\Program Files\Tesseract-OCR\tesseract.exe
-  before giving up.
-- The .env reader now handles files saved by Notepad with a UTF-8 BOM, which
-  was silently hiding the first line's key.
-- Quoted paths like "C:\Program Files\..." are cleaned before use.
+Then restart the backend (CTRL+C, then python -m uvicorn app.main:app --reload)
+and hard-refresh the browser tabs (Ctrl+F5).
 
-You can even delete the TESSERACT_CMD line from .env after this; the default
-install path is found on its own.
+Files inside, and where they go:
+1. app\api_intercom.py   -> E:\Hackathons\zeroqueue-hubble\app\api_intercom.py
+2. app\static\agent.html -> E:\Hackathons\zeroqueue-hubble\app\static\agent.html
+3. app\static\agent.js   -> E:\Hackathons\zeroqueue-hubble\app\static\agent.js
+4. app\static\app.js     -> E:\Hackathons\zeroqueue-hubble\app\static\app.js
+
+What changed this time:
+1. CUSTOMER CHAT NOT SHOWING HUMAN REPLIES - the Intercom webhook reader
+   (app/api_intercom.py) read conversation_message first, which is always
+   the CUSTOMER's original question, so your reply was never saved. It now
+   reads the last conversation part, which is where Intercom puts the reply.
+2. The console reply box clears itself after a successful Approve & send;
+   a failed send keeps your text.
+3. The reply box starts completely empty (no placeholder text).
+4. Human replies on the customer page now render as plain text, so a
+   mid-sentence " - " no longer turns into a bullet.
+
+Verified locally: 54/54 tests pass; screenshots checked for both pages.
