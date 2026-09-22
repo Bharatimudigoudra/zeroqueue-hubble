@@ -4,4 +4,5 @@ __pycache__
 uploads/*
 !uploads/.gitkeep
 zeroqueue-state.db
+zeroqueue-test-state.db
 *.pyc
