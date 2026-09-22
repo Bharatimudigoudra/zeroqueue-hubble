@@ -205,7 +205,6 @@ async function sendMessage(retry = null) {
     if (!response.ok) throw new Error(body.detail || "Request failed");
     typing.remove();
     if (body.answer) addMessage("bot", body.answer, null, body.status === "clarifying");
-    if (body.attachment_note) addMessage("system", body.attachment_note);
     updateTrace(body.trace);
   } catch (error) {
     typing.remove();
