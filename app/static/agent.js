@@ -19,6 +19,11 @@
   // sends are appended locally and never come back through this list, so
   // the count must only track what the server returned.
   let renderedServerMessages = 0;
+  // Replies the agent sent that the Intercom webhook has not echoed into
+  // the server transcript yet. When the echo arrives, skip it - the
+  // optimistic bubble is already on screen, so rendering it again would
+  // print every human reply twice.
+  let pendingAgentReplies = [];
 
   // Optional protection: only asked for when the server demands a key.
   function agentKey() { return localStorage.getItem('zq-agent-key') || ''; }
@@ -87,7 +92,7 @@
 
   function bubble(role, text, attachment) {
     const row = document.createElement('div');
-    const kind = role === 'customer' ? 'customer' : (role === 'agent' ? 'human' : 'bot');
+    const kind = role === 'customer' ? 'customer' : (role === 'bot' || role === 'assistant' ? 'bot' : 'human');
     row.className = 'message-row ' + kind;
     const avatar = document.createElement('div');
     avatar.className = kind === 'human' ? 'human-avatar' : 'bot-avatar';
@@ -139,6 +144,7 @@
     detailMeta.textContent = meta;
 
     transcriptEl.innerHTML = '';
+    pendingAgentReplies = [];
     (data.messages || []).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text, m.attachment)); });
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
     renderedServerMessages = (data.messages || []).length;
@@ -172,6 +178,7 @@
         { method: 'POST', body: JSON.stringify({ body: body }) })).json();
       if (result.sent) {
         replyEditor.value = '';
+        pendingAgentReplies.push(body);
         transcriptEl.appendChild(bubble('agent', body));
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
         setStatus('Sent - the customer sees this in their chat.', true);
@@ -198,7 +205,11 @@
       const data = await (await api('/api/agent/conversations/' + encodeURIComponent(selectedSession))).json();
       const messages = data.messages || [];
       if (messages.length > renderedServerMessages) {
-        messages.slice(renderedServerMessages).forEach(function (m) { transcriptEl.appendChild(bubble(m.role, m.text, m.attachment)); });
+        messages.slice(renderedServerMessages).forEach(function (m) {
+          const echoIndex = m.role === 'human' ? pendingAgentReplies.indexOf(m.text) : -1;
+          if (echoIndex !== -1) { pendingAgentReplies.splice(echoIndex, 1); return; }
+          transcriptEl.appendChild(bubble(m.role, m.text, m.attachment));
+        });
         renderedServerMessages = messages.length;
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
       }
